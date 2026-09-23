@@ -31,6 +31,31 @@ async def test_calculate_valor_success(db_session):
     assert valor == Decimal("24.10")
 
 
+async def test_calculate_valor_truncates_instead_of_rounding(db_session):
+    # This test data is deliberately chosen so the raw product has a
+    # non-trivial third decimal: 1.50 * 483.33 / 100 = 7.24995. Any rounding
+    # mode (HALF_UP or HALF_EVEN) would produce 7.25 here, since the third
+    # decimal is 9. This project's business rule is to TRUNCATE to 2 decimal
+    # places, not round, so the correct result is 7.24. If a future change
+    # reintroduces rounding, this test will fail and catch it.
+    db_session.add(
+        TarifaRevision(
+            tipo_general=TipoGeneral.MOTOS, numero_revision=NumeroRevision.ORDINARIA, porcentaje="1.50"
+        )
+    )
+    db_session.add(ParametroSBU(anio=2026, valor="483.33"))
+    await db_session.flush()
+
+    valor = await calculate_valor(
+        db_session,
+        tipo_general=TipoGeneral.MOTOS,
+        numero_revision=NumeroRevision.ORDINARIA,
+        fecha_servicio=date(2026, 8, 27),
+    )
+
+    assert valor == Decimal("7.24")
+
+
 async def test_calculate_valor_missing_tarifa_raises_422(db_session):
     db_session.add(ParametroSBU(anio=2026, valor="482.00"))
     await db_session.flush()
