@@ -12,6 +12,7 @@ import app.models.client  # noqa: F401
 import app.models.catalogos  # noqa: F401
 import app.models.contribuyente  # noqa: F401
 import app.models.vehiculo  # noqa: F401
+import app.models.tramite_revision_vehicular  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)
