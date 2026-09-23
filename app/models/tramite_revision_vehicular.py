@@ -3,10 +3,11 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import Date, DateTime, Enum as SAEnum, ForeignKey, Numeric, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 from app.models.catalogos import NumeroRevision, TipoGeneral
+from app.models.vehiculo import Vehiculo
 
 
 class EstadoTramite(str, enum.Enum):
@@ -19,6 +20,7 @@ class TramiteRevisionVehicular(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     contribuyente_id: Mapped[int] = mapped_column(ForeignKey("contribuyente.id"), nullable=False)
     vehiculo_id: Mapped[int] = mapped_column(ForeignKey("vehiculo.id"), nullable=False)
+    vehiculo: Mapped["Vehiculo"] = relationship(lazy="raise")
     tipo_general: Mapped[TipoGeneral] = mapped_column(SAEnum(TipoGeneral, name="tipo_general_enum"), nullable=False)
     numero_revision: Mapped[NumeroRevision] = mapped_column(
         SAEnum(NumeroRevision, name="numero_revision_enum"), nullable=False
