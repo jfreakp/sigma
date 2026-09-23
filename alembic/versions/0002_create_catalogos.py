@@ -53,8 +53,8 @@ def upgrade() -> None:
     op.create_table(
         "tarifa_revision",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("tipo_general", sa.Enum(*TIPO_GENERAL_VALUES, name="tipo_general_enum"), nullable=False),
-        sa.Column("numero_revision", sa.Enum(*NUMERO_REVISION_VALUES, name="numero_revision_enum"), nullable=False),
+        sa.Column("tipo_general", tipo_general_enum, nullable=False),
+        sa.Column("numero_revision", numero_revision_enum, nullable=False),
         sa.Column("porcentaje", sa.Numeric(5, 2), nullable=False),
     )
 
@@ -66,8 +66,8 @@ def upgrade() -> None:
 
     tarifa_revision_table = sa.table(
         "tarifa_revision",
-        sa.column("tipo_general", sa.String),
-        sa.column("numero_revision", sa.String),
+        sa.column("tipo_general", tipo_general_enum),
+        sa.column("numero_revision", numero_revision_enum),
         sa.column("porcentaje", sa.Numeric),
     )
     rows = [
