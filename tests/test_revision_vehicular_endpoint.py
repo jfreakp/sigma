@@ -1,4 +1,8 @@
+from sqlalchemy import select
+
 from app.models.catalogos import Fabricante, NumeroRevision, ParametroSBU, TarifaRevision, TipoGeneral, TipoVehiculo
+from app.models.contribuyente import Contribuyente
+from app.models.tramite_revision_vehicular import TramiteRevisionVehicular
 
 
 def _valid_payload() -> dict:
@@ -83,3 +87,50 @@ async def test_create_tramite_missing_tarifa_returns_422(client, db_session, aut
 
     assert response.status_code == 422
     assert response.json()["error_code"] == "TARIFA_NOT_FOUND"
+
+
+async def test_create_tramite_unknown_tipo_vehiculo_returns_422(client, db_session, auth_headers):
+    db_session.add(Fabricante(id=4, nombre="CHEVROLET"))
+    db_session.add(
+        TarifaRevision(tipo_general=TipoGeneral.LIVIANOS, numero_revision=NumeroRevision.PRIMERA, porcentaje="5.00")
+    )
+    db_session.add(ParametroSBU(anio=2026, valor="482.00"))
+    await db_session.flush()
+
+    response = await client.post(
+        "/api/v1/revision-vehicular", json=_valid_payload(), headers=auth_headers
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error_code"] == "TIPO_VEHICULO_NOT_FOUND"
+
+
+async def test_create_tramite_dedupes_contribuyente_by_numero_identificacion(client, db_session, auth_headers):
+    await _seed_catalogos(db_session)
+
+    payload_1 = _valid_payload()
+    response_1 = await client.post(
+        "/api/v1/revision-vehicular", json=payload_1, headers=auth_headers
+    )
+    assert response_1.status_code == 201
+
+    payload_2 = _valid_payload()
+    payload_2["vehiculo"]["placa"] = "ZZZ999Z"
+    payload_2["vehiculo"]["chasis"] = "OTHERCHASIS0001"
+    payload_2["vehiculo"]["motor"] = "OTHERMOTOR0001"
+    response_2 = await client.post(
+        "/api/v1/revision-vehicular", json=payload_2, headers=auth_headers
+    )
+    assert response_2.status_code == 201
+
+    result = await db_session.execute(
+        select(Contribuyente).where(
+            Contribuyente.numero_identificacion == payload_1["numero_identificacion"]
+        )
+    )
+    contribuyentes = result.scalars().all()
+    assert len(contribuyentes) == 1
+
+    tramite_1 = await db_session.get(TramiteRevisionVehicular, response_1.json()["id"])
+    tramite_2 = await db_session.get(TramiteRevisionVehicular, response_2.json()["id"])
+    assert tramite_1.contribuyente_id == tramite_2.contribuyente_id == contribuyentes[0].id
