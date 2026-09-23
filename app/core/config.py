@@ -6,7 +6,7 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://revision_user:revision_pass@localhost:5433/revision_vehicular"
     test_database_url: str = "postgresql+asyncpg://revision_user:revision_pass@localhost:5433/revision_vehicular_test"
-    jwt_secret: str = "change-me-in-production"
+    jwt_secret: str
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60
 
