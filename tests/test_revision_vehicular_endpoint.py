@@ -134,3 +134,24 @@ async def test_create_tramite_dedupes_contribuyente_by_numero_identificacion(cli
     tramite_1 = await db_session.get(TramiteRevisionVehicular, response_1.json()["id"])
     tramite_2 = await db_session.get(TramiteRevisionVehicular, response_2.json()["id"])
     assert tramite_1.contribuyente_id == tramite_2.contribuyente_id == contribuyentes[0].id
+
+
+async def test_get_tramite_by_id(client, db_session, auth_headers):
+    await _seed_catalogos(db_session)
+    create_response = await client.post(
+        "/api/v1/revision-vehicular", json=_valid_payload(), headers=auth_headers
+    )
+    tramite_id = create_response.json()["id"]
+
+    response = await client.get(f"/api/v1/revision-vehicular/{tramite_id}", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.json()["id"] == tramite_id
+    assert response.json()["valor_calculado"] == "24.10"
+
+
+async def test_get_tramite_not_found(client, auth_headers):
+    response = await client.get("/api/v1/revision-vehicular/999999", headers=auth_headers)
+
+    assert response.status_code == 404
+    assert response.json()["error_code"] == "TRAMITE_NOT_FOUND"

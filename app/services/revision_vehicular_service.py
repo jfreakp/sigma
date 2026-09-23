@@ -126,3 +126,19 @@ async def create_tramite(
         .options(selectinload(TramiteRevisionVehicular.vehiculo))
     )
     return result.scalar_one()
+
+
+async def get_tramite_by_id(db: AsyncSession, tramite_id: int) -> TramiteRevisionVehicular:
+    result = await db.execute(
+        select(TramiteRevisionVehicular)
+        .where(TramiteRevisionVehicular.id == tramite_id)
+        .options(selectinload(TramiteRevisionVehicular.vehiculo))
+    )
+    tramite = result.scalar_one_or_none()
+    if tramite is None:
+        raise AppHTTPException(
+            status_code=404,
+            detail=f"No existe trámite con id={tramite_id}",
+            error_code="TRAMITE_NOT_FOUND",
+        )
+    return tramite
