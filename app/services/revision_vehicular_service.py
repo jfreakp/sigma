@@ -118,6 +118,7 @@ async def create_tramite(
     )
     db.add(tramite)
     await db.flush()
+    await db.commit()
 
     result = await db.execute(
         select(TramiteRevisionVehicular)
