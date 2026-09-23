@@ -75,8 +75,10 @@ Capas separadas: `models` (persistencia) nunca se expone directo en las respuest
 ## Lógica de negocio
 
 ```
-valor_calculado = round(tarifa.porcentaje * sbu_vigente.valor / 100, 2)
+valor_calculado = truncar_a_2_decimales(tarifa.porcentaje * sbu_vigente.valor / 100)
 ```
+
+Nota: esto es una truncación deliberada, no un redondeo, por decisión explícita de producto — cualquier remanente fraccionario más allá de 2 decimales se descarta en vez de redondearse hacia arriba o al par más cercano.
 
 Replica exactamente la regla confirmada en `MunicipalBondHome.java` de GIM (`valuePercentage * currentBasicSalary / 100`). Si no existe una `tarifa_revision` para la combinación `tipo_general` + `numero_revision` enviada, o no hay `parametro_sbu` cargado para el año fiscal correspondiente a `fecha_servicio`, la API responde 422 con un mensaje explícito — no asume valores por defecto.
 

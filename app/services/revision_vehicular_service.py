@@ -1,5 +1,5 @@
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_DOWN, Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,7 +42,11 @@ async def calculate_valor(
             error_code="SBU_NOT_FOUND",
         )
 
-    valor = (tarifa.porcentaje * sbu.valor / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    # Deliberate truncation, not rounding: per explicit product decision, any
+    # fractional remainder beyond 2 decimals is discarded rather than rounded
+    # up or to even. ROUND_DOWN truncates toward zero, which is equivalent to
+    # simple decimal truncation here since all values are positive.
+    valor = (tarifa.porcentaje * sbu.valor / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
     return valor
 
 
