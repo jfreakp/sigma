@@ -16,12 +16,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Create the estado_tramite_enum type
-    op.execute("CREATE TYPE estado_tramite_enum AS ENUM ('REGISTRADO')")
-
     tipo_general_enum = postgresql.ENUM(name="tipo_general_enum", create_type=False)
     numero_revision_enum = postgresql.ENUM(name="numero_revision_enum", create_type=False)
-    estado_tramite_enum = postgresql.ENUM(name="estado_tramite_enum", create_type=False)
+    estado_tramite_enum = postgresql.ENUM("REGISTRADO", name="estado_tramite_enum", create_type=False)
+    estado_tramite_enum.create(op.get_bind(), checkfirst=True)
 
     op.create_table(
         "tramite_revision_vehicular",
