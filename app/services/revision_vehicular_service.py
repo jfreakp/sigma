@@ -3,9 +3,14 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.errors import AppHTTPException
-from app.models.catalogos import NumeroRevision, ParametroSBU, TarifaRevision, TipoGeneral
+from app.models.catalogos import Fabricante, NumeroRevision, ParametroSBU, TarifaRevision, TipoGeneral, TipoVehiculo
+from app.models.contribuyente import Contribuyente
+from app.models.tramite_revision_vehicular import TramiteRevisionVehicular
+from app.models.vehiculo import Vehiculo
+from app.schemas.revision_vehicular import TramiteRevisionVehicularCreate
 
 
 async def calculate_valor(
@@ -39,3 +44,84 @@ async def calculate_valor(
 
     valor = (tarifa.porcentaje * sbu.valor / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     return valor
+
+
+async def _get_or_create_contribuyente(db: AsyncSession, payload: TramiteRevisionVehicularCreate) -> Contribuyente:
+    result = await db.execute(
+        select(Contribuyente).where(Contribuyente.numero_identificacion == payload.numero_identificacion)
+    )
+    contribuyente = result.scalar_one_or_none()
+    if contribuyente is not None:
+        return contribuyente
+
+    contribuyente = Contribuyente(
+        tipo_identificacion=payload.tipo_identificacion,
+        numero_identificacion=payload.numero_identificacion,
+    )
+    db.add(contribuyente)
+    await db.flush()
+    return contribuyente
+
+
+async def _create_vehiculo(db: AsyncSession, payload: TramiteRevisionVehicularCreate) -> Vehiculo:
+    fabricante = await db.get(Fabricante, payload.vehiculo.fabricante_id)
+    if fabricante is None:
+        raise AppHTTPException(
+            status_code=422,
+            detail=f"No existe fabricante con id={payload.vehiculo.fabricante_id}",
+            error_code="FABRICANTE_NOT_FOUND",
+        )
+
+    tipo_vehiculo = await db.get(TipoVehiculo, payload.vehiculo.tipo_vehiculo_id)
+    if tipo_vehiculo is None:
+        raise AppHTTPException(
+            status_code=422,
+            detail=f"No existe tipo_vehiculo con id={payload.vehiculo.tipo_vehiculo_id}",
+            error_code="TIPO_VEHICULO_NOT_FOUND",
+        )
+
+    vehiculo = Vehiculo(
+        placa=payload.vehiculo.placa,
+        chasis=payload.vehiculo.chasis,
+        motor=payload.vehiculo.motor,
+        anio=payload.vehiculo.anio,
+        cilindraje=payload.vehiculo.cilindraje,
+        tonelaje=payload.vehiculo.tonelaje,
+        fabricante_id=payload.vehiculo.fabricante_id,
+        tipo_vehiculo_id=payload.vehiculo.tipo_vehiculo_id,
+    )
+    db.add(vehiculo)
+    await db.flush()
+    return vehiculo
+
+
+async def create_tramite(
+    db: AsyncSession, payload: TramiteRevisionVehicularCreate
+) -> TramiteRevisionVehicular:
+    contribuyente = await _get_or_create_contribuyente(db, payload)
+    vehiculo = await _create_vehiculo(db, payload)
+    valor = await calculate_valor(
+        db,
+        tipo_general=payload.tipo_general,
+        numero_revision=payload.numero_revision,
+        fecha_servicio=payload.fecha_servicio,
+    )
+
+    tramite = TramiteRevisionVehicular(
+        contribuyente_id=contribuyente.id,
+        vehiculo_id=vehiculo.id,
+        tipo_general=payload.tipo_general,
+        numero_revision=payload.numero_revision,
+        fecha_servicio=payload.fecha_servicio,
+        valor_calculado=valor,
+        explicacion=payload.explicacion,
+    )
+    db.add(tramite)
+    await db.flush()
+
+    result = await db.execute(
+        select(TramiteRevisionVehicular)
+        .where(TramiteRevisionVehicular.id == tramite.id)
+        .options(selectinload(TramiteRevisionVehicular.vehiculo))
+    )
+    return result.scalar_one()
