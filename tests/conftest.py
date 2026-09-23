@@ -38,3 +38,27 @@ async def client(db_session):
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
     app.dependency_overrides.clear()
+
+
+from app.core.security import hash_secret
+from app.models.client import Client
+
+
+@pytest_asyncio.fixture
+async def auth_headers(client, db_session):
+    db_session.add(
+        Client(
+            client_id="test-client",
+            client_secret_hash=hash_secret("test-secret"),
+            name="Test Client",
+            is_active=True,
+        )
+    )
+    await db_session.flush()
+
+    response = await client.post(
+        "/api/v1/auth/token",
+        json={"client_id": "test-client", "client_secret": "test-secret"},
+    )
+    token = response.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
