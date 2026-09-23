@@ -3,6 +3,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.api.v1.router import api_router
+
 app = FastAPI(title="Revisión Vehicular API")
 
 
@@ -25,3 +27,6 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok"}
+
+
+app.include_router(api_router, prefix="/api/v1")
