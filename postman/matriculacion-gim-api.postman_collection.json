@@ -1129,6 +1129,45 @@
           }
         }
       ]
+    },
+    {
+      "name": "Diagnóstico",
+      "description": "Alertas de la API.",
+      "item": [
+        {
+          "name": "Reglas del rodaje",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Reglas del rodaje al día', () => pm.expect(b.estado, b.mensaje).to.eql('AL_DIA'));",
+                  "console.log(b.estado + ': ' + b.mensaje);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/diagnostico/reglas-rodaje",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "diagnostico",
+                "reglas-rodaje"
+              ]
+            },
+            "description": "Compara las reglas del rodaje vigentes en GIM (rubros 3 y 713) con las de este sistema. estado = AL_DIA o DESACTUALIZADO; si está DESACTUALIZADO, se debe actualizar el rodaje en este sistema (tabla matriculacion.tramo_rodaje) y no se emiten rodajes hasta hacerlo."
+          }
+        }
+      ]
     }
   ]
 }

@@ -4,6 +4,7 @@ Se insertan dentro de la transacción de cada test (fixture db_session), así
 que se descartan al terminar. El periodo fiscal cubre el año actual para que
 los endpoints, que usan la fecha real, encuentren el SBU.
 """
+import importlib.util
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -25,6 +26,7 @@ from app.gim.models import (
     VehicleRevisionValues,
     VehicleType,
 )
+from app.models.tramo_rodaje import ReglaGimReplicada, TramoRodaje
 
 CONTRIBUYENTE_ID = 307513
 CONTRIBUYENTE_CEDULA = "1104971302"
@@ -76,6 +78,42 @@ VALOR_RECARGO = Decimal("25.00")
 FIXTURES = Path(__file__).parent / "fixtures"
 REGLA_RODAJE = (FIXTURES / "regla_rodaje_3.drl").read_text(encoding="utf-8")
 REGLA_EXONERACION = (FIXTURES / "regla_exoneracion_713.drl").read_text(encoding="utf-8")
+
+
+def _cargar_migracion_0005():
+    # Los tramos y huellas iniciales viven en la migración 0005; las pruebas usan esos mismos datos.
+    ruta = Path(__file__).parent.parent / "alembic" / "versions" / "0005_tramo_rodaje.py"
+    spec = importlib.util.spec_from_file_location("migracion_0005_tramo_rodaje", ruta)
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+    return modulo
+
+
+_MIGRACION_0005 = _cargar_migracion_0005()
+
+
+def tramos_rodaje_iniciales() -> list[TramoRodaje]:
+    return [
+        TramoRodaje(
+            desde=Decimal(desde),
+            hasta=Decimal(hasta) if hasta is not None else None,
+            valor=Decimal(valor),
+            servicios_administrativos=Decimal(servicios),
+            descripcion=descripcion,
+        )
+        for desde, hasta, valor, servicios, descripcion in _MIGRACION_0005.TRAMOS_RODAJE
+    ]
+
+
+async def seed_tramos_rodaje(session: AsyncSession) -> None:
+    session.add_all(tramos_rodaje_iniciales())
+    session.add_all(
+        [
+            ReglaGimReplicada(entry_id=entry_id, huella_sha256=huella, descripcion=descripcion)
+            for entry_id, huella, descripcion in _MIGRACION_0005.HUELLAS_REGLAS
+        ]
+    )
+    await session.flush()
 
 
 async def add_vehicle(session: AsyncSession, adjunct_id: int, placa: str, **campos) -> None:
@@ -202,3 +240,4 @@ async def seed_gim(session: AsyncSession) -> None:
     await add_resident(session, CONTRIBUYENTE_ID, CONTRIBUYENTE_CEDULA, "ALVARADO GONZALEZ MARIA FERNANDA", CONTRIBUYENTE_DIRECCION)
     await add_resident(session, CONTRIBUYENTE_SIN_DIRECCION_ID, CONTRIBUYENTE_SIN_DIRECCION_CEDULA, "SIN DIRECCION", None)
     await add_resident(session, settings.gim_emisor_resident_id, "2222222268", "USUARIO SISTEMA MATRICULACION", "LOJA")
+    await seed_tramos_rodaje(session)

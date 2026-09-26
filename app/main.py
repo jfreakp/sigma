@@ -1,3 +1,6 @@
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -5,8 +8,29 @@ from sqlalchemy.exc import InterfaceError, OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.v1.router import api_router
+from app.core.db import async_session_maker
+from app.services.rodaje_service import alertar_si_reglas_cambiaron
 
-app = FastAPI(title="Revisión Vehicular API")
+logger = logging.getLogger(__name__)
+
+
+async def revisar_reglas_al_arrancar() -> None:
+    # Aviso temprano en el log si Rentas cambió la regla del rodaje en GIM. Si GIM no está
+    # disponible, la API arranca igual: la revisión se repite en cada emisión de rodaje.
+    try:
+        async with async_session_maker() as session:
+            await alertar_si_reglas_cambiaron(session)
+    except Exception:
+        logger.warning("No se pudo revisar las reglas del rodaje de GIM al arrancar", exc_info=True)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await revisar_reglas_al_arrancar()
+    yield
+
+
+app = FastAPI(title="API Matriculación → GIM", lifespan=lifespan)
 
 # Fallos al conectar con la base de GIM (red caída, servidor apagado, timeout).
 # OSError incluye ConnectionRefusedError, TimeoutError y errores de DNS.
