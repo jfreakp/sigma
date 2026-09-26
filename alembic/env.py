@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.models.base import Base
 import app.models.client  # noqa: F401
 import app.models.orden_titulo  # noqa: F401
+import app.models.tramo_rodaje  # noqa: F401
 
 SCHEMA = "matriculacion"
 

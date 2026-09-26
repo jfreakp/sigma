@@ -5,13 +5,14 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import func, select, text, update
+from sqlalchemy import delete, func, select, text, update
 
 from app.core.errors import AppHTTPException
 from app.gim.models import EntryDefinition, MunicipalBond
+from app.models.tramo_rodaje import ReglaGimReplicada, TramoRodaje
 from app.schemas.tramites_anuales import RodajeRequest
 from app.services import emision_service
-from app.services.rodaje_service import HUELLAS_REGLAS, calcular_rodaje, emitir_rodaje
+from app.services.rodaje_service import MENSAJE_ACTUALIZAR_RODAJE, alertar_si_reglas_cambiaron, calcular_rodaje, emitir_rodaje
 from tests.gim_seed import (
     CONTRIBUYENTE_CEDULA,
     ENTRY_EXONERACION_ID,
@@ -22,6 +23,7 @@ from tests.gim_seed import (
     REGLA_RODAJE,
     STATUS_PENDIENTE_ID,
     TIMEPERIOD_ANUAL_ID,
+    tramos_rodaje_iniciales,
 )
 
 AHORA = datetime.now(ZoneInfo("America/Guayaquil"))
@@ -66,7 +68,7 @@ async def _contar_titulos(db) -> int:
     ],
 )
 def test_calcular_rodaje_igual_que_la_regla_de_gim(avaluo, valor, exoneracion, descripcion):
-    calculo = calcular_rodaje(Decimal(avaluo))
+    calculo = calcular_rodaje(Decimal(avaluo), tramos_rodaje_iniciales())
     assert calculo.valor_rodaje == Decimal(valor)
     assert calculo.valor_exoneracion == Decimal(exoneracion)
     assert calculo.descripcion == descripcion
@@ -75,7 +77,7 @@ def test_calcular_rodaje_igual_que_la_regla_de_gim(avaluo, valor, exoneracion, d
 @pytest.mark.parametrize("avaluo", ["1000.50", "4000.50", "40000.50"])
 def test_avaluo_entre_tramos(avaluo):
     with pytest.raises(AppHTTPException) as exc_info:
-        calcular_rodaje(Decimal(avaluo))
+        calcular_rodaje(Decimal(avaluo), tramos_rodaje_iniciales())
     assert (exc_info.value.status_code, exc_info.value.error_code) == (422, "AVALUO_FUERA_DE_TRAMO")
 
 
@@ -171,8 +173,26 @@ def _sha256(texto: str) -> str:
     return hashlib.sha256(texto.encode("utf-8")).hexdigest()
 
 
-def test_huellas_corresponden_a_las_reglas_vigentes_en_gim():
-    assert HUELLAS_REGLAS == {ENTRY_RODAJE_ID: _sha256(REGLA_RODAJE), ENTRY_EXONERACION_ID: _sha256(REGLA_EXONERACION)}
+async def test_huellas_cargadas_corresponden_a_las_reglas_vigentes_en_gim(db_session, gim_seed):
+    # Las huellas vienen de la migración 0005: deben ser las del texto real de las reglas.
+    filas = (await db_session.execute(select(ReglaGimReplicada.entry_id, ReglaGimReplicada.huella_sha256))).all()
+    assert dict(filas) == {ENTRY_RODAJE_ID: _sha256(REGLA_RODAJE), ENTRY_EXONERACION_ID: _sha256(REGLA_EXONERACION)}
+
+
+async def test_los_tramos_se_leen_de_la_base(db_session, gim_seed, api_client_row):
+    # Cambiar un tramo es un UPDATE en matriculacion.tramo_rodaje, sin tocar código.
+    await db_session.execute(update(TramoRodaje).where(TramoRodaje.desde == Decimal("4001")).values(valor=Decimal("12.00")))
+
+    [resultado] = await _emitir(db_session, api_client_row, _payload(anios=[ESTE_ANIO]))
+
+    assert resultado.valor == Decimal("12.10")
+
+
+async def test_sin_tramos_configurados(db_session, gim_seed, api_client_row):
+    await db_session.execute(delete(TramoRodaje))
+    with pytest.raises(AppHTTPException) as exc_info:
+        await _emitir(db_session, api_client_row, _payload())
+    assert (exc_info.value.status_code, exc_info.value.error_code) == (500, "RUBRO_MAL_CONFIGURADO")
 
 
 @pytest.mark.parametrize("entry_id", [ENTRY_RODAJE_ID, ENTRY_EXONERACION_ID])
@@ -190,4 +210,23 @@ async def test_no_emite_si_la_regla_cambio_en_gim(db_session, gim_seed, api_clie
 
     assert (exc_info.value.status_code, exc_info.value.error_code) == (500, "REGLA_RODAJE_CAMBIO")
     assert f"rubro {entry_id}" in exc_info.value.detail
+    assert MENSAJE_ACTUALIZAR_RODAJE in exc_info.value.detail
     assert await _contar_titulos(db_session) == antes
+
+
+def test_mensaje_indica_que_el_rodaje_se_actualiza_en_este_sistema():
+    assert "Se debe actualizar el rodaje en este sistema" in MENSAJE_ACTUALIZAR_RODAJE
+    assert "matriculacion.tramo_rodaje" in MENSAJE_ACTUALIZAR_RODAJE
+
+
+async def test_alerta_en_el_log_si_la_regla_cambio(db_session, gim_seed, caplog):
+    assert await alertar_si_reglas_cambiaron(db_session) is False
+    assert "REGLA_RODAJE_CAMBIO" not in caplog.text
+
+    await db_session.execute(
+        update(EntryDefinition).where(EntryDefinition.entry_id == ENTRY_RODAJE_ID).values(rule=EntryDefinition.rule + "\n# cambio")
+    )
+    with caplog.at_level("WARNING"):
+        assert await alertar_si_reglas_cambiaron(db_session) is True
+    assert "REGLA_RODAJE_CAMBIO" in caplog.text
+    assert MENSAJE_ACTUALIZAR_RODAJE in caplog.text

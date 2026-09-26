@@ -75,7 +75,7 @@ En `diario_20260505` ya existen:
 |---|---|
 | Emisor de sistema "USUARIO SISTEMA MATRICULACION" | `resident.id` **3008801** |
 | Usuaria de pruebas mfalvarado | `resident.id` **307513** (úsala como emisora para ver los títulos con su usuario en GIM1) |
-| Esquema `matriculacion` (migraciones aplicadas) | versión `0004` |
+| Esquema `matriculacion` (migraciones aplicadas) | versión `0005` |
 | Client `isburo-matriculacion` | creado; secreto en el entorno de Postman local |
 
 En una base de GIM nueva, ver los pasos 2 a 4 de [Pasar a producción](#pasar-a-producción).
@@ -170,7 +170,8 @@ JWT_EXPIRE_MINUTES=60
 alembic upgrade head
 ```
 
-Crea `matriculacion.client`, `matriculacion.orden_titulo` (única por orden + rubro + año) y `matriculacion.alembic_version`. No toca `gimprod`.
+Crea `matriculacion.client`, `matriculacion.orden_titulo` (única por orden + rubro + año), `matriculacion.tramo_rodaje` y
+`matriculacion.regla_gim_replicada` (con los tramos y huellas actuales) y `matriculacion.alembic_version`. No toca `gimprod`.
 
 ### 6. Dar de alta el client de ISBURO
 
@@ -313,12 +314,8 @@ Un título por año. El valor sale del tramo del avalúo, replicando la regla de
 
 - Fecha de servicio: 1 de enero del año; vencimiento: 30 de junio; descripción: la del tramo (como la regla de GIM).
 - Avalúos entre tramos (p. ej. 1.000,50 o 4.000,50) → 422 `AVALUO_FUERA_DE_TRAMO`.
-- La regla de GIM es Drools y la API no puede ejecutarla: los tramos están replicados en `TRAMOS_RODAJE`
-  (`app/services/rodaje_service.py`). Antes de emitir, la API compara la huella (SHA-256) del texto de las
-  reglas vigentes en GIM (rubros 3 y 713) con la guardada en `HUELLAS_REGLAS`. **Si Rentas edita una regla,
-  la API deja de emitir rodajes** con 500 `REGLA_RODAJE_CAMBIO` en lugar de cobrar distinto que la pantalla.
-  Para volver a habilitarlos: leer la regla nueva en `gimprod.entrydefinition`, ajustar `TRAMOS_RODAJE`,
-  guardar el texto en `tests/fixtures/` y su huella en `HUELLAS_REGLAS`, y correr `pytest`.
+- La regla de GIM es Drools y la API no puede ejecutarla: los tramos están copiados, de forma legible, en la
+  tabla `matriculacion.tramo_rodaje` (ver [Si Rentas cambia la regla del rodaje](#si-rentas-cambia-la-regla-del-rodaje)).
 
 ### `POST /api/v1/recargo-retraso`
 
@@ -376,6 +373,68 @@ Formato: `{"detail": "...", "error_code": "..."}`.
 | 422 | `VALIDATION_ERROR` | campos faltantes o inválidos |
 | 404 | `ORDEN_NOT_FOUND` | la orden no existe |
 | 500 | `RUBRO_MAL_CONFIGURADO` | el rubro 813 o un sub-rubro no está configurado en GIM |
-| 500 | `REGLA_RODAJE_CAMBIO` | la regla de cálculo del rodaje (rubro 3 o 713) cambió en GIM; hay que actualizar la API |
+| 500 | `REGLA_RODAJE_CAMBIO` | la regla de cálculo del rodaje (rubro 3 o 713) cambió en GIM; hay que actualizar `matriculacion.tramo_rodaje` |
 | 500 | `INTERNAL_ERROR` | error inesperado |
 | 503 | `GIM_NO_DISPONIBLE` | no hay conexión con la base de GIM |
+
+---
+
+## Si Rentas cambia la regla del rodaje
+
+GIM calcula el rodaje con reglas Drools guardadas como texto en `gimprod.entrydefinition` (rubro 3, id 3, y
+sub-rubro 713, id 1001). La API no puede ejecutarlas; usa esta copia legible:
+
+```sql
+SELECT desde, hasta, valor, servicios_administrativos, descripcion
+FROM matriculacion.tramo_rodaje ORDER BY desde;
+```
+
+| Columna | Qué es |
+|---|---|
+| `desde`, `hasta` | rango del avalúo, inclusivo (`hasta` NULL = sin límite) |
+| `valor` | lo que se cobra de rodaje en ese tramo |
+| `servicios_administrativos` | lo que se cobra en el sub-rubro 713 (hoy 2,00 hasta 1.000) |
+| `descripcion` | texto que queda en el título |
+
+La API compara la huella (SHA-256) del texto de cada regla vigente en GIM con la registrada en
+`matriculacion.regla_gim_replicada`. Si Rentas editó la regla, el cambio **se debe replicar en este sistema** y la API
+avisa de tres formas:
+
+- **Al emitir un rodaje:** no emite y responde 500 `REGLA_RODAJE_CAMBIO` con el mensaje
+  "La regla de cálculo del rodaje cambió en GIM. Se debe actualizar el rodaje en este sistema (API de Matriculación →
+  tabla matriculacion.tramo_rodaje) para que quede igual que en GIM. Mientras tanto no se emiten rodajes."
+- **En cualquier momento:** `GET /api/v1/diagnostico/reglas-rodaje` (Postman: *Diagnóstico → Reglas del rodaje*)
+  responde `"estado": "AL_DIA"` o `"DESACTUALIZADO"` con el mismo mensaje y qué regla cambió. Sirve para revisarlo a
+  mano o desde el monitoreo, antes de que falle una emisión.
+- **Al arrancar la API:** si la regla cambió, deja una advertencia `REGLA_RODAJE_CAMBIO` en el log.
+
+Para actualizar el rodaje en este sistema (no hace falta tocar código):
+
+1. Leer la regla nueva y ver qué cambió:
+
+   ```sql
+   SELECT rule FROM gimprod.entrydefinition WHERE entry_id = 3 AND iscurrent;    -- rodaje
+   SELECT rule FROM gimprod.entrydefinition WHERE entry_id = 713 AND iscurrent;  -- servicios administrativos
+   ```
+
+2. Ajustar los tramos, por ejemplo:
+
+   ```sql
+   UPDATE matriculacion.tramo_rodaje SET valor = 6 WHERE desde = 1001;
+   ```
+
+3. Registrar la huella de la regla nueva (se calcula en la misma base):
+
+   ```sql
+   UPDATE matriculacion.regla_gim_replicada r
+   SET huella_sha256 = encode(sha256(convert_to(d.rule, 'UTF8')), 'hex')
+   FROM gimprod.entrydefinition d
+   WHERE d.entry_id = r.entry_id AND d.iscurrent AND r.entry_id = 3;   -- o 713
+   ```
+
+Hacer los tres pasos juntos: si solo se actualiza la huella sin revisar los tramos, la API volvería a emitir con
+los valores anteriores.
+
+Las pruebas automáticas usan el texto de las reglas guardado en `tests/fixtures/`; si la regla cambia, conviene
+actualizar también esos archivos y los datos iniciales de la migración `0005`.
+
