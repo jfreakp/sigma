@@ -7,12 +7,12 @@ from sqlalchemy.exc import IntegrityError
 from app.models.orden_titulo import OrdenTitulo
 
 
-def _orden(client_id: int, id_orden: str = "MAT-2026-000001") -> OrdenTitulo:
+def _orden(client_id: int, id_orden: str = "MAT-2026-000001", entry_id: int = 813) -> OrdenTitulo:
     return OrdenTitulo(
         id_orden=id_orden,
         id_titulo=19701042,
         numero_titulo=19061084,
-        entry_id=813,
+        entry_id=entry_id,
         valor=Decimal("19.38"),
         client_id=client_id,
         request={"id_orden": id_orden},
@@ -39,8 +39,9 @@ async def test_persiste_orden_titulo(db_session, api_client_row):
     assert fila.created_at is not None
 
 
-async def test_id_orden_es_unico(db_session, api_client_row):
+async def test_una_orden_admite_un_titulo_por_rubro(db_session, api_client_row):
     db_session.add(_orden(api_client_row.id))
+    db_session.add(_orden(api_client_row.id, entry_id=684))
     await db_session.flush()
 
     db_session.add(_orden(api_client_row.id))

@@ -48,6 +48,8 @@ class Entry(GimBase):
     name: Mapped[str] = mapped_column(String(120))
     isactive: Mapped[bool | None] = mapped_column(Boolean)
     timeperiod_id: Mapped[int | None] = mapped_column(BigInteger)
+    # Clase del adjunto que pide la pantalla (p. ej. ec.gob.gim.revenue.model.adjunct.Vehicle); NULL si no lleva.
+    adjunctclassname: Mapped[str | None] = mapped_column(String(250))
 
 
 class EntryDefinition(GimBase):

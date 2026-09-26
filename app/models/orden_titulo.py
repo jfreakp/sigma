@@ -12,7 +12,8 @@ class OrdenTitulo(Base):
     """Relación entre la orden del Sistema de Matriculación y el título emitido en GIM."""
 
     __tablename__ = "orden_titulo"
-    __table_args__ = (UniqueConstraint("id_orden", name="uq_orden_titulo_id_orden"),)
+    # Una orden puede generar varios títulos: uno por rubro.
+    __table_args__ = (UniqueConstraint("id_orden", "entry_id", name="uq_orden_titulo_orden_rubro"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     id_orden: Mapped[str] = mapped_column(String(100), nullable=False)

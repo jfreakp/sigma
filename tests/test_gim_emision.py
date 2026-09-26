@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date, datetime, time
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -7,6 +8,7 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.gim.emision import DatosTitulo, DatosVehiculo, LineaTitulo, emitir_titulo
 from tests.gim_seed import (
+    CONTRIBUYENTE_CEDULA,
     CONTRIBUYENTE_DIRECCION,
     CONTRIBUYENTE_ID,
     ENTRY_PROCESO_DATOS_ID,
@@ -24,6 +26,7 @@ AHORA = datetime(2026, 9, 25, 10, 30, 15, 123000, tzinfo=ZoneInfo("America/Guaya
 def _datos(vehiculo: DatosVehiculo | None = None) -> DatosTitulo:
     return DatosTitulo(
         resident_id=CONTRIBUYENTE_ID,
+        identificacion=CONTRIBUYENTE_CEDULA,
         direccion=CONTRIBUYENTE_DIRECCION,
         entry_id=ENTRY_REVISION_ID,
         timeperiod_id=TIMEPERIOD_ID,
@@ -45,6 +48,7 @@ def _datos(vehiculo: DatosVehiculo | None = None) -> DatosTitulo:
             fabricante_id=FABRICANTE_ID,
             tipo_vehiculo_id=TIPO_VEHICULO_ID,
         ),
+        base=Decimal("19.28"),
         lineas=[LineaTitulo(ENTRY_REVISION_ID, Decimal("19.28")), LineaTitulo(ENTRY_PROCESO_DATOS_ID, Decimal("0.10"))],
         ahora=AHORA,
     )
@@ -194,3 +198,19 @@ async def test_vehiculo_con_datos_opcionales_vacios(db_session, gim_seed):
         id=titulo.id,
     )
     assert vehicle == {"vin": None, "enginenumber": None, "year": None, "cubiccentimeters": None, "weightcapacity": None}
+
+
+async def test_titulo_sin_vehiculo_agrupa_por_cedula(db_session, gim_seed):
+    datos = replace(
+        _datos(),
+        vehiculo=None,
+        entry_id=794,
+        base=Decimal("1.00"),
+        lineas=[LineaTitulo(794, Decimal("10.00")), LineaTitulo(ENTRY_PROCESO_DATOS_ID, Decimal("0.10"))],
+    )
+    titulo = await emitir_titulo(db_session, datos)
+
+    bond = await _fila(
+        db_session, "SELECT adjunct_id, groupingcode, base, value FROM gimprod.municipalbond WHERE id = :id", id=titulo.id
+    )
+    assert bond == {"adjunct_id": None, "groupingcode": CONTRIBUYENTE_CEDULA, "base": Decimal("1.00"), "value": Decimal("10.10")}

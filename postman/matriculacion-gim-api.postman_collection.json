@@ -1,20 +1,36 @@
 {
   "info": {
     "name": "API Matriculación → GIM",
-    "description": "Servicios de la API que emite títulos de crédito de Matriculación en GIM.\n\nUso:\n1. Importar esta colección y el entorno (postman/diario_20260505.postman_environment.json).\n2. Seleccionar el entorno.\n3. Ejecutar 'Auth / Obtener token': el token se guarda solo en la variable accessToken.\n4. Ejecutar el resto. Cambiar la variable idOrden para emitir una orden nueva.\n\nLa colección no contiene secretos: clientSecret vive en el entorno.",
+    "description": "Servicios de la API que emite títulos de crédito de Matriculación en GIM.\n\nUso:\n1. Importar esta colección y el entorno (postman/diario_20260505.postman_environment.json).\n2. Seleccionar el entorno.\n3. Ejecutar 'Auth / Obtener token': el token se guarda solo en la variable accessToken.\n4. Ejecutar el resto. Una orden admite un título por trámite; cambiar la variable idOrden para empezar una orden nueva.\n\nLa colección no contiene secretos: clientSecret vive en el entorno.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
     "type": "bearer",
-    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
   },
   "item": [
     {
       "name": "Health",
       "request": {
-        "auth": { "type": "noauth" },
+        "auth": {
+          "type": "noauth"
+        },
         "method": "GET",
-        "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        }
       }
     },
     {
@@ -39,18 +55,36 @@
             }
           ],
           "request": {
-            "auth": { "type": "noauth" },
+            "auth": {
+              "type": "noauth"
+            },
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"client_id\": \"{{clientId}}\",\n  \"client_secret\": \"{{clientSecret}}\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/auth/token",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "auth", "token"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "token"
+              ]
             }
           }
         }
@@ -79,38 +113,33 @@
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"id_orden\": \"{{idOrden}}\",\n  \"numero_identificacion\": \"1104971302\",\n  \"vehiculo\": {\n    \"placa\": \"LBA-2213\",\n    \"chasis\": \"221\",\n    \"motor\": \"212\",\n    \"anio\": 2015,\n    \"cilindraje\": 212,\n    \"tonelaje\": 12,\n    \"fabricante_id\": 241,\n    \"tipo_vehiculo_id\": 33\n  },\n  \"tipo_general\": \"TAXIS\",\n  \"numero_revision\": \"PRIMERA\",\n  \"explicacion\": \"PRUEBA API MATRICULACION - REVISION VEHICULAR LBA-2213 2026\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/revision-vehicular",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "revision-vehicular"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "revision-vehicular"
+              ]
             },
             "description": "Emite el título en GIM (813 + sub-rubro 444) en estado PENDIENTE y devuelve id_titulo.\n\nCampos opcionales: vehiculo.chasis, motor, anio, cilindraje, tonelaje y referencia (si no se envía, toma la explicación).\n\ntipo_general: BUSES, BUSETAS, LIVIANOS, MOTOS, PESADOS, PLATAFORMAS, TAXIS.\nnumero_revision: PRIMERA, SEGUNDA, TERCERA, CUARTA, ORDINARIA."
-          }
-        },
-        {
-          "name": "Consultar por orden",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/revision-vehicular/orden/{{idOrden}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "revision-vehicular", "orden", "{{idOrden}}"]
-            }
           }
         },
         {
@@ -134,16 +163,31 @@
               ],
               "request": {
                 "method": "POST",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"id_orden\": \"{{idOrden}}\",\n  \"numero_identificacion\": \"1104971302\",\n  \"vehiculo\": {\n    \"placa\": \"LBA-2213\",\n    \"fabricante_id\": 241,\n    \"tipo_vehiculo_id\": 33\n  },\n  \"tipo_general\": \"TAXIS\",\n  \"numero_revision\": \"PRIMERA\",\n  \"explicacion\": \"REPETIDA\"\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
                 "url": {
                   "raw": "{{baseUrl}}/api/v1/revision-vehicular",
-                  "host": ["{{baseUrl}}"],
-                  "path": ["api", "v1", "revision-vehicular"]
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "revision-vehicular"
+                  ]
                 },
                 "description": "Ejecutar después de 'Emitir título' con el mismo idOrden: no emite otro título y devuelve el existente."
               }
@@ -166,16 +210,31 @@
               ],
               "request": {
                 "method": "POST",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"id_orden\": \"PRUEBA-ERROR-CONTRIBUYENTE\",\n  \"numero_identificacion\": \"9999999999\",\n  \"vehiculo\": {\n    \"placa\": \"LBA-2213\",\n    \"fabricante_id\": 241,\n    \"tipo_vehiculo_id\": 33\n  },\n  \"tipo_general\": \"TAXIS\",\n  \"numero_revision\": \"PRIMERA\",\n  \"explicacion\": \"ERROR ESPERADO\"\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
                 "url": {
                   "raw": "{{baseUrl}}/api/v1/revision-vehicular",
-                  "host": ["{{baseUrl}}"],
-                  "path": ["api", "v1", "revision-vehicular"]
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "revision-vehicular"
+                  ]
                 }
               }
             },
@@ -197,72 +256,617 @@
               ],
               "request": {
                 "method": "POST",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"id_orden\": \"PRUEBA-ERROR-VALIDACION\",\n  \"numero_identificacion\": \"1104971302\",\n  \"vehiculo\": {\n    \"placa\": \"LBA-2213\",\n    \"fabricante_id\": 241,\n    \"tipo_vehiculo_id\": 33\n  },\n  \"tipo_general\": \"AVIONES\",\n  \"numero_revision\": \"PRIMERA\",\n  \"explicacion\": \"ERROR ESPERADO\"\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
                 "url": {
                   "raw": "{{baseUrl}}/api/v1/revision-vehicular",
-                  "host": ["{{baseUrl}}"],
-                  "path": ["api", "v1", "revision-vehicular"]
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "revision-vehicular"
+                  ]
                 },
                 "description": "tipo_general fuera del catálogo: la API rechaza la petición antes de consultar GIM."
               }
-            },
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Trámites de valor fijo",
+      "description": "POST /api/v1/tramites-vehiculares. Valor = definición vigente del rubro en GIM × 1 + sub-rubro 444 (0,10).\n\nvehiculo.placa es obligatoria para 684, 789, 790, 793 y 795: los demás datos del vehículo se copian del último vehículo con esa placa en GIM (se pueden enviar chasis, motor, anio, cilindraje, tonelaje, fabricante_id, tipo_vehiculo_id para reemplazarlos). 794 y 796 no llevan vehículo.\n\nexplicacion es obligatoria para 793, 794 y 796.\n\nTodas usan {{idOrden}}: una orden puede tener un título por trámite.",
+      "item": [
+        {
+          "name": "Duplicado de matrícula (684)",
+          "event": [
             {
-              "name": "Orden inexistente → 404",
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "  const b = pm.response.json();",
+                  "  console.log(b.tramite + ': título ' + b.id_titulo + ', número ' + b.numero_titulo + ', valor ' + b.valor);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id_orden\": \"{{idOrden}}\",\n  \"tramite\": \"DUPLICADO_MATRICULA\",\n  \"numero_identificacion\": \"1104971302\",\n  \"vehiculo\": {\n    \"placa\": \"LBA-2213\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tramites-vehiculares",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tramites-vehiculares"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Inscripción de gravamen (789)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "  const b = pm.response.json();",
+                  "  console.log(b.tramite + ': título ' + b.id_titulo + ', número ' + b.numero_titulo + ', valor ' + b.valor);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id_orden\": \"{{idOrden}}\",\n  \"tramite\": \"INSCRIPCION_GRAVAMEN\",\n  \"numero_identificacion\": \"1104971302\",\n  \"vehiculo\": {\n    \"placa\": \"LBA-2213\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tramites-vehiculares",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tramites-vehiculares"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Levantamiento de gravamen (790)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "  const b = pm.response.json();",
+                  "  console.log(b.tramite + ': título ' + b.id_titulo + ', número ' + b.numero_titulo + ', valor ' + b.valor);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id_orden\": \"{{idOrden}}\",\n  \"tramite\": \"LEVANTAMIENTO_GRAVAMEN\",\n  \"numero_identificacion\": \"1104971302\",\n  \"vehiculo\": {\n    \"placa\": \"LBA-2213\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tramites-vehiculares",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tramites-vehiculares"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Modificación de características (793)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "  const b = pm.response.json();",
+                  "  console.log(b.tramite + ': título ' + b.id_titulo + ', número ' + b.numero_titulo + ', valor ' + b.valor);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id_orden\": \"{{idOrden}}\",\n  \"tramite\": \"MODIFICACION_CARACTERISTICAS\",\n  \"numero_identificacion\": \"1104971302\",\n  \"vehiculo\": {\n    \"placa\": \"LBA-2213\"\n  },\n  \"explicacion\": \"CAMBIO DE COLOR PLACA LBA-2213\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tramites-vehiculares",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tramites-vehiculares"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Bloqueo o desbloqueo (794)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "  const b = pm.response.json();",
+                  "  console.log(b.tramite + ': título ' + b.id_titulo + ', número ' + b.numero_titulo + ', valor ' + b.valor);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id_orden\": \"{{idOrden}}\",\n  \"tramite\": \"BLOQUEO_DESBLOQUEO\",\n  \"numero_identificacion\": \"1104971302\",\n  \"vehiculo\": {\n    \"placa\": \"LBA-2213\"\n  },\n  \"explicacion\": \"BLOQUEO PLACA LBA-2213\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tramites-vehiculares",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tramites-vehiculares"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Certificado Único Vehicular (795)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "  const b = pm.response.json();",
+                  "  console.log(b.tramite + ': título ' + b.id_titulo + ', número ' + b.numero_titulo + ', valor ' + b.valor);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id_orden\": \"{{idOrden}}\",\n  \"tramite\": \"CERTIFICADO_UNICO_VEHICULAR\",\n  \"numero_identificacion\": \"1104971302\",\n  \"vehiculo\": {\n    \"placa\": \"LBA-2213\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tramites-vehiculares",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tramites-vehiculares"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Certificado de Poseer Vehículo (796)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "  const b = pm.response.json();",
+                  "  console.log(b.tramite + ': título ' + b.id_titulo + ', número ' + b.numero_titulo + ', valor ' + b.valor);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id_orden\": \"{{idOrden}}\",\n  \"tramite\": \"CERTIFICADO_POSEER_VEHICULO\",\n  \"numero_identificacion\": \"1104971302\",\n  \"vehiculo\": {\n    \"placa\": \"LBA-2213\"\n  },\n  \"explicacion\": \"CERTIFICADO DE POSEER VEHICULO PLACA LBA-2213\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tramites-vehiculares",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tramites-vehiculares"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Casos de error",
+          "item": [
+            {
+              "name": "Placa requerida → 422",
               "event": [
                 {
                   "listen": "test",
                   "script": {
                     "type": "text/javascript",
                     "exec": [
-                      "pm.test('404 ORDEN_NOT_FOUND', () => {",
-                      "  pm.response.to.have.status(404);",
-                      "  pm.expect(pm.response.json().error_code).to.eql('ORDEN_NOT_FOUND');",
+                      "pm.test('422 PLACA_REQUERIDA', () => {",
+                      "  pm.response.to.have.status(422);",
+                      "  pm.expect(pm.response.json().error_code).to.eql('PLACA_REQUERIDA');",
                       "});"
                     ]
                   }
                 }
               ],
               "request": {
-                "method": "GET",
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"id_orden\": \"PRUEBA-ERROR-PLACA\",\n  \"tramite\": \"DUPLICADO_MATRICULA\",\n  \"numero_identificacion\": \"1104971302\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
                 "url": {
-                  "raw": "{{baseUrl}}/api/v1/revision-vehicular/orden/NO-EXISTE",
-                  "host": ["{{baseUrl}}"],
-                  "path": ["api", "v1", "revision-vehicular", "orden", "NO-EXISTE"]
+                  "raw": "{{baseUrl}}/api/v1/tramites-vehiculares",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "tramites-vehiculares"
+                  ]
                 }
               }
             },
             {
-              "name": "Sin token → 401",
+              "name": "Explicación requerida → 422",
               "event": [
                 {
                   "listen": "test",
                   "script": {
                     "type": "text/javascript",
                     "exec": [
-                      "pm.test('401 MISSING_TOKEN', () => {",
-                      "  pm.response.to.have.status(401);",
-                      "  pm.expect(pm.response.json().error_code).to.eql('MISSING_TOKEN');",
+                      "pm.test('422 EXPLICACION_REQUERIDA', () => {",
+                      "  pm.response.to.have.status(422);",
+                      "  pm.expect(pm.response.json().error_code).to.eql('EXPLICACION_REQUERIDA');",
                       "});"
                     ]
                   }
                 }
               ],
               "request": {
-                "auth": { "type": "noauth" },
-                "method": "GET",
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"id_orden\": \"PRUEBA-ERROR-EXPLICACION\",\n  \"tramite\": \"BLOQUEO_DESBLOQUEO\",\n  \"numero_identificacion\": \"1104971302\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
                 "url": {
-                  "raw": "{{baseUrl}}/api/v1/revision-vehicular/orden/{{idOrden}}",
-                  "host": ["{{baseUrl}}"],
-                  "path": ["api", "v1", "revision-vehicular", "orden", "{{idOrden}}"]
+                  "raw": "{{baseUrl}}/api/v1/tramites-vehiculares",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "tramites-vehiculares"
+                  ]
                 }
+              }
+            },
+            {
+              "name": "Trámite repetido en la orden → 409",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('409 ORDEN_YA_EMITIDA', () => {",
+                      "  pm.response.to.have.status(409);",
+                      "  pm.expect(pm.response.json().error_code).to.eql('ORDEN_YA_EMITIDA');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"id_orden\": \"{{idOrden}}\",\n  \"tramite\": \"DUPLICADO_MATRICULA\",\n  \"numero_identificacion\": \"1104971302\",\n  \"vehiculo\": {\n    \"placa\": \"LBA-2213\"\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/tramites-vehiculares",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "tramites-vehiculares"
+                  ]
+                },
+                "description": "Ejecutar después de 'Duplicado de matrícula (684)' con el mismo idOrden."
               }
             }
           ]
+        }
+      ]
+    },
+    {
+      "name": "Órdenes",
+      "item": [
+        {
+          "name": "Consultar orden",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ordenes/{{idOrden}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ordenes",
+                "{{idOrden}}"
+              ]
+            },
+            "description": "Todos los títulos de la orden (revisión vehicular y trámites)."
+          }
+        },
+        {
+          "name": "Orden inexistente → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 ORDEN_NOT_FOUND', () => {",
+                  "  pm.response.to.have.status(404);",
+                  "  pm.expect(pm.response.json().error_code).to.eql('ORDEN_NOT_FOUND');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ordenes/NO-EXISTE",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ordenes",
+                "NO-EXISTE"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Sin token → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 MISSING_TOKEN', () => {",
+                  "  pm.response.to.have.status(401);",
+                  "  pm.expect(pm.response.json().error_code).to.eql('MISSING_TOKEN');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ordenes/{{idOrden}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ordenes",
+                "{{idOrden}}"
+              ]
+            }
+          }
         }
       ]
     }
