@@ -30,3 +30,30 @@ def test_settings_requires_jwt_secret(monkeypatch):
 
     errors = exc_info.value.errors()
     assert any(error["loc"] == ("jwt_secret",) and error["type"] == "missing" for error in errors)
+
+
+def test_settings_requires_gim_database_url_and_emisor(monkeypatch):
+    monkeypatch.setenv("JWT_SECRET", "x")
+    monkeypatch.delenv("GIM_DATABASE_URL", raising=False)
+    monkeypatch.delenv("GIM_EMISOR_RESIDENT_ID", raising=False)
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(_env_file=None)
+
+    missing = {error["loc"] for error in exc_info.value.errors() if error["type"] == "missing"}
+    assert ("gim_database_url",) in missing
+    assert ("gim_emisor_resident_id",) in missing
+
+
+def test_settings_gim_defaults(monkeypatch):
+    monkeypatch.setenv("JWT_SECRET", "x")
+    monkeypatch.setenv("GIM_DATABASE_URL", "postgresql+asyncpg://u:p@h:5432/db")
+    monkeypatch.setenv("GIM_EMISOR_RESIDENT_ID", "5")
+    monkeypatch.delenv("GIM_ENTRY_ID_REVISION", raising=False)
+    monkeypatch.delenv("TEST_GIM_DATABASE_URL", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.gim_emisor_resident_id == 5
+    assert settings.gim_entry_id_revision == 813
+    assert settings.test_gim_database_url == "postgresql+asyncpg://gim_test:gim_test@localhost:5434/gim_test"

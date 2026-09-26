@@ -8,3 +8,8 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+docs/
+graphify-out/
+
+# Entornos de Postman con secretos (la colección sí se versiona)
+postman/*.postman_environment.json

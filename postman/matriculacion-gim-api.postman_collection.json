@@ -1,0 +1,270 @@
+{
+  "info": {
+    "name": "API Matriculación → GIM",
+    "description": "Servicios de la API que emite títulos de crédito de Matriculación en GIM.\n\nUso:\n1. Importar esta colección y el entorno (postman/diario_20260505.postman_environment.json).\n2. Seleccionar el entorno.\n3. Ejecutar 'Auth / Obtener token': el token se guarda solo en la variable accessToken.\n4. Ejecutar el resto. Cambiar la variable idOrden para emitir una orden nueva.\n\nLa colección no contiene secretos: clientSecret vive en el entorno.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+      }
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Obtener token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "if (body.access_token) {",
+                  "  pm.environment.set('accessToken', body.access_token);",
+                  "  console.log('accessToken guardado (expira en ' + body.expires_in + ' s)');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{clientId}}\",\n  \"client_secret\": \"{{clientSecret}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/token",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "token"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Revisión vehicular (rubro 813)",
+      "item": [
+        {
+          "name": "Emitir título",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 201) {",
+                  "  pm.environment.set('ultimoIdTitulo', body.id_titulo);",
+                  "  console.log('Título emitido: id ' + body.id_titulo + ', número ' + body.numero_titulo + ', valor ' + body.valor);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id_orden\": \"{{idOrden}}\",\n  \"numero_identificacion\": \"1104971302\",\n  \"vehiculo\": {\n    \"placa\": \"LBA-2213\",\n    \"chasis\": \"221\",\n    \"motor\": \"212\",\n    \"anio\": 2015,\n    \"cilindraje\": 212,\n    \"tonelaje\": 12,\n    \"fabricante_id\": 241,\n    \"tipo_vehiculo_id\": 33\n  },\n  \"tipo_general\": \"TAXIS\",\n  \"numero_revision\": \"PRIMERA\",\n  \"explicacion\": \"PRUEBA API MATRICULACION - REVISION VEHICULAR LBA-2213 2026\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/revision-vehicular",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "revision-vehicular"]
+            },
+            "description": "Emite el título en GIM (813 + sub-rubro 444) en estado PENDIENTE y devuelve id_titulo.\n\nCampos opcionales: vehiculo.chasis, motor, anio, cilindraje, tonelaje y referencia (si no se envía, toma la explicación).\n\ntipo_general: BUSES, BUSETAS, LIVIANOS, MOTOS, PESADOS, PLATAFORMAS, TAXIS.\nnumero_revision: PRIMERA, SEGUNDA, TERCERA, CUARTA, ORDINARIA."
+          }
+        },
+        {
+          "name": "Consultar por orden",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/revision-vehicular/orden/{{idOrden}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "revision-vehicular", "orden", "{{idOrden}}"]
+            }
+          }
+        },
+        {
+          "name": "Casos de error",
+          "item": [
+            {
+              "name": "Orden repetida → 409",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('409 ORDEN_YA_EMITIDA', () => {",
+                      "  pm.response.to.have.status(409);",
+                      "  pm.expect(pm.response.json().error_code).to.eql('ORDEN_YA_EMITIDA');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"id_orden\": \"{{idOrden}}\",\n  \"numero_identificacion\": \"1104971302\",\n  \"vehiculo\": {\n    \"placa\": \"LBA-2213\",\n    \"fabricante_id\": 241,\n    \"tipo_vehiculo_id\": 33\n  },\n  \"tipo_general\": \"TAXIS\",\n  \"numero_revision\": \"PRIMERA\",\n  \"explicacion\": \"REPETIDA\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/revision-vehicular",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "revision-vehicular"]
+                },
+                "description": "Ejecutar después de 'Emitir título' con el mismo idOrden: no emite otro título y devuelve el existente."
+              }
+            },
+            {
+              "name": "Contribuyente no registrado → 422",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('422 CONTRIBUYENTE_NO_REGISTRADO', () => {",
+                      "  pm.response.to.have.status(422);",
+                      "  pm.expect(pm.response.json().error_code).to.eql('CONTRIBUYENTE_NO_REGISTRADO');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"id_orden\": \"PRUEBA-ERROR-CONTRIBUYENTE\",\n  \"numero_identificacion\": \"9999999999\",\n  \"vehiculo\": {\n    \"placa\": \"LBA-2213\",\n    \"fabricante_id\": 241,\n    \"tipo_vehiculo_id\": 33\n  },\n  \"tipo_general\": \"TAXIS\",\n  \"numero_revision\": \"PRIMERA\",\n  \"explicacion\": \"ERROR ESPERADO\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/revision-vehicular",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "revision-vehicular"]
+                }
+              }
+            },
+            {
+              "name": "Tipo general inválido → 422",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('422 VALIDATION_ERROR', () => {",
+                      "  pm.response.to.have.status(422);",
+                      "  pm.expect(pm.response.json().error_code).to.eql('VALIDATION_ERROR');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"id_orden\": \"PRUEBA-ERROR-VALIDACION\",\n  \"numero_identificacion\": \"1104971302\",\n  \"vehiculo\": {\n    \"placa\": \"LBA-2213\",\n    \"fabricante_id\": 241,\n    \"tipo_vehiculo_id\": 33\n  },\n  \"tipo_general\": \"AVIONES\",\n  \"numero_revision\": \"PRIMERA\",\n  \"explicacion\": \"ERROR ESPERADO\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/revision-vehicular",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "revision-vehicular"]
+                },
+                "description": "tipo_general fuera del catálogo: la API rechaza la petición antes de consultar GIM."
+              }
+            },
+            {
+              "name": "Orden inexistente → 404",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('404 ORDEN_NOT_FOUND', () => {",
+                      "  pm.response.to.have.status(404);",
+                      "  pm.expect(pm.response.json().error_code).to.eql('ORDEN_NOT_FOUND');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/revision-vehicular/orden/NO-EXISTE",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "revision-vehicular", "orden", "NO-EXISTE"]
+                }
+              }
+            },
+            {
+              "name": "Sin token → 401",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('401 MISSING_TOKEN', () => {",
+                      "  pm.response.to.have.status(401);",
+                      "  pm.expect(pm.response.json().error_code).to.eql('MISSING_TOKEN');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "auth": { "type": "noauth" },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/revision-vehicular/orden/{{idOrden}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "revision-vehicular", "orden", "{{idOrden}}"]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
