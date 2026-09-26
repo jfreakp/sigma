@@ -769,6 +769,266 @@
       ]
     },
     {
+      "name": "Trámites anuales",
+      "description": "Un título por año.\n\nPOST /api/v1/rodaje (rubro 3): valor según el tramo del avalúo (regla de GIM): 0-1000 → 0 + 2,00 servicios administrativos; 1001-4000 → 5; 4001-8000 → 10; 8001-12000 → 15; 12001-16000 → 20; 16001-20000 → 25; 20001-30000 → 30; 30001-40000 → 50; ≥40001 → 70; más 0,10 del 444. Servicio 1 de enero y vencimiento 30 de junio de cada año. Los avalúos entre tramos (p. ej. 4000,50) se rechazan con 422 AVALUO_FUERA_DE_TRAMO.\n\nPOST /api/v1/recargo-retraso (rubro 685): 25,00 + 0,10 por cada fecha (una por año); servicio = vencimiento = la fecha enviada.\n\nTodos los años de una petición comparten el vehículo y se emiten todos o ninguno.",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Años relativos a hoy, para que la colección siga funcionando otros años.",
+              "const anio = new Date().getFullYear();",
+              "pm.variables.set('anioActual', anio);",
+              "pm.variables.set('anioAnterior', anio - 1);"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "Rodaje (años anterior y actual)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "  const b = pm.response.json();",
+                  "  b.titulos.forEach(t => console.log(b.tramite + ' ' + t.anio + ': título ' + t.id_titulo + ', número ' + t.numero_titulo + ', valor ' + t.valor));",
+                  "  console.log('Total: ' + b.total);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id_orden\": \"{{idOrden}}\",\n  \"numero_identificacion\": \"1104971302\",\n  \"vehiculo\": {\n    \"placa\": \"LBA-2213\"\n  },\n  \"avaluo\": 5600.0,\n  \"anios\": [\n    {{anioAnterior}},\n    {{anioActual}}\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rodaje",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rodaje"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Recargo por retraso (año anterior)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "  const b = pm.response.json();",
+                  "  b.titulos.forEach(t => console.log(b.tramite + ' ' + t.anio + ': título ' + t.id_titulo + ', número ' + t.numero_titulo + ', valor ' + t.valor));",
+                  "  console.log('Total: ' + b.total);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id_orden\": \"{{idOrden}}\",\n  \"numero_identificacion\": \"1104971302\",\n  \"vehiculo\": {\n    \"placa\": \"LBA-2213\"\n  },\n  \"fechas_servicio\": [\n    \"{{anioAnterior}}-05-20\"\n  ],\n  \"explicacion\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/recargo-retraso",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "recargo-retraso"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Casos de error",
+          "item": [
+            {
+              "name": "Avalúo entre tramos → 422",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('422 AVALUO_FUERA_DE_TRAMO', () => {",
+                      "  pm.response.to.have.status(422);",
+                      "  pm.expect(pm.response.json().error_code).to.eql('AVALUO_FUERA_DE_TRAMO');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"id_orden\": \"PRUEBA-ERROR-AVALUO\",\n  \"numero_identificacion\": \"1104971302\",\n  \"vehiculo\": {\n    \"placa\": \"LBA-2213\"\n  },\n  \"avaluo\": 4000.5,\n  \"anios\": [\n    {{anioActual}}\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/rodaje",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "rodaje"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Año futuro → 422",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('422 ANIO_INVALIDO', () => {",
+                      "  pm.response.to.have.status(422);",
+                      "  pm.expect(pm.response.json().error_code).to.eql('ANIO_INVALIDO');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"id_orden\": \"PRUEBA-ERROR-ANIO\",\n  \"numero_identificacion\": \"1104971302\",\n  \"vehiculo\": {\n    \"placa\": \"LBA-2213\"\n  },\n  \"avaluo\": 5600.0,\n  \"anios\": [\n    2100\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/rodaje",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "rodaje"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Rodaje repetido en la orden → 409",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('409 ORDEN_YA_EMITIDA', () => {",
+                      "  pm.response.to.have.status(409);",
+                      "  pm.expect(pm.response.json().error_code).to.eql('ORDEN_YA_EMITIDA');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"id_orden\": \"{{idOrden}}\",\n  \"numero_identificacion\": \"1104971302\",\n  \"vehiculo\": {\n    \"placa\": \"LBA-2213\"\n  },\n  \"avaluo\": 5600.0,\n  \"anios\": [\n    {{anioActual}}\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/rodaje",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "rodaje"
+                  ]
+                },
+                "description": "Ejecutar después de 'Rodaje (años anterior y actual)' con el mismo idOrden."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "Órdenes",
       "item": [
         {

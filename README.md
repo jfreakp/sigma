@@ -3,17 +3,21 @@
 API (FastAPI) que recibe órdenes del Sistema de Matriculación y **emite los títulos de crédito en GIM**
 igual que la pantalla de emisión de GIM1, en estado PENDIENTE, siempre con el sub-rubro 444 (costo de
 proceso de datos). Guarda la relación orden ↔ títulos en su propio esquema (`matriculacion`) dentro de la
-base de GIM y devuelve el id de cada título. Una orden puede tener un título por trámite.
+base de GIM y devuelve el id de cada título. Una orden puede tener un título por trámite (y, en rodaje y
+recargo, uno por año).
 
 | Trámite | Rubro | Endpoint |
 |---|---|---|
 | Revisión vehicular | 813 | `POST /api/v1/revision-vehicular` |
 | Duplicado de matrícula, gravámenes, modificación de características, bloqueo/desbloqueo, CUV, CVP | 684, 789, 790, 793, 794, 795, 796 | `POST /api/v1/tramites-vehiculares` |
+| Rodaje (un título por año) | 3 | `POST /api/v1/rodaje` |
+| Recargo por retraso (un título por año) | 685 | `POST /api/v1/recargo-retraso` |
 
-Rodaje (3) y recargo por retraso (685) están pendientes.
+Con esto quedan cubiertos los 10 procesos de Matriculación del levantamiento.
 
 - Diseño: `docs/superpowers/specs/2026-09-25-emision-titulo-gim-design.md` (revisión vehicular) y
-  `docs/superpowers/specs/2026-09-26-tramites-valor-fijo-design.md` (trámites de valor fijo)
+  `docs/superpowers/specs/2026-09-26-tramites-valor-fijo-design.md` (trámites de valor fijo) y
+  `docs/superpowers/specs/2026-09-26-rodaje-recargo-design.md` (rodaje y recargo)
 - Colección de Postman: `postman/matriculacion-gim-api.postman_collection.json`
 
 ## Cómo funciona
@@ -71,7 +75,7 @@ En `diario_20260505` ya existen:
 |---|---|
 | Emisor de sistema "USUARIO SISTEMA MATRICULACION" | `resident.id` **3008801** |
 | Usuaria de pruebas mfalvarado | `resident.id` **307513** (úsala como emisora para ver los títulos con su usuario en GIM1) |
-| Esquema `matriculacion` (migraciones aplicadas) | versión `0003` |
+| Esquema `matriculacion` (migraciones aplicadas) | versión `0004` |
 | Client `isburo-matriculacion` | creado; secreto en el entorno de Postman local |
 
 En una base de GIM nueva, ver los pasos 2 a 4 de [Pasar a producción](#pasar-a-producción).
@@ -166,7 +170,7 @@ JWT_EXPIRE_MINUTES=60
 alembic upgrade head
 ```
 
-Crea `matriculacion.client`, `matriculacion.orden_titulo` (única por orden + rubro) y `matriculacion.alembic_version`. No toca `gimprod`.
+Crea `matriculacion.client`, `matriculacion.orden_titulo` (única por orden + rubro + año) y `matriculacion.alembic_version`. No toca `gimprod`.
 
 ### 6. Dar de alta el client de ISBURO
 
@@ -280,14 +284,75 @@ Respuesta `201`:
 {"id_orden": "MAT-2026-000123", "tramite": "DUPLICADO_MATRICULA", "id_titulo": 19701500, "numero_titulo": 19061540, "valor": 22.10, "exitoso": true}
 ```
 
+### `POST /api/v1/rodaje`
+
+```json
+{
+  "id_orden": "MAT-2026-000123",
+  "numero_identificacion": "1104971302",
+  "vehiculo": { "placa": "LBA-2213" },
+  "avaluo": 5600.00,
+  "anios": [2025, 2026],
+  "referencia": null
+}
+```
+
+Un título por año. El valor sale del tramo del avalúo, replicando la regla del rubro 3 de GIM:
+
+| Avalúo | Rodaje | Servicios administrativos (713) | 444 | Total por año |
+|---|---|---|---|---|
+| 0 – 1.000 | 0 | 2,00 | 0,10 | 2,10 |
+| 1.001 – 4.000 | 5 | 0 | 0,10 | 5,10 |
+| 4.001 – 8.000 | 10 | 0 | 0,10 | 10,10 |
+| 8.001 – 12.000 | 15 | 0 | 0,10 | 15,10 |
+| 12.001 – 16.000 | 20 | 0 | 0,10 | 20,10 |
+| 16.001 – 20.000 | 25 | 0 | 0,10 | 25,10 |
+| 20.001 – 30.000 | 30 | 0 | 0,10 | 30,10 |
+| 30.001 – 40.000 | 50 | 0 | 0,10 | 50,10 |
+| más de 40.000 | 70 | 0 | 0,10 | 70,10 |
+
+- Fecha de servicio: 1 de enero del año; vencimiento: 30 de junio; descripción: la del tramo (como la regla de GIM).
+- Avalúos entre tramos (p. ej. 1.000,50 o 4.000,50) → 422 `AVALUO_FUERA_DE_TRAMO`.
+- La regla de GIM es Drools y la API no puede ejecutarla: los tramos están replicados en `TRAMOS_RODAJE`
+  (`app/services/rodaje_service.py`). Antes de emitir, la API compara la huella (SHA-256) del texto de las
+  reglas vigentes en GIM (rubros 3 y 713) con la guardada en `HUELLAS_REGLAS`. **Si Rentas edita una regla,
+  la API deja de emitir rodajes** con 500 `REGLA_RODAJE_CAMBIO` en lugar de cobrar distinto que la pantalla.
+  Para volver a habilitarlos: leer la regla nueva en `gimprod.entrydefinition`, ajustar `TRAMOS_RODAJE`,
+  guardar el texto en `tests/fixtures/` y su huella en `HUELLAS_REGLAS`, y correr `pytest`.
+
+### `POST /api/v1/recargo-retraso`
+
+```json
+{
+  "id_orden": "MAT-2026-000123",
+  "numero_identificacion": "1104971302",
+  "vehiculo": { "placa": "LBA-2213" },
+  "fechas_servicio": ["2024-05-20", "2025-05-20"],
+  "explicacion": null
+}
+```
+
+Un título por fecha (una por año): 25,00 (valor vigente en GIM) + 0,10. Servicio y vencimiento = la fecha enviada.
+
+En rodaje y recargo, todos los años de la petición comparten el vehículo y se emiten **todos o ninguno**.
+Respuesta `201` de ambos:
+
+```json
+{"id_orden": "MAT-2026-000123", "tramite": "RODAJE",
+ "titulos": [{"anio": 2025, "id_titulo": 19701441, "numero_titulo": 19061483, "valor": 10.10},
+             {"anio": 2026, "id_titulo": 19701442, "numero_titulo": 19061484, "valor": 10.10}],
+ "total": 20.20, "exitoso": true}
+```
+
 ### `GET /api/v1/ordenes/{id_orden}`
 
-Todos los títulos de la orden:
+Todos los títulos de la orden (`anio` solo en rodaje y recargo):
 
 ```json
 {"id_orden": "MAT-2026-000123", "titulos": [
-  {"rubro": 813, "id_titulo": 19701433, "numero_titulo": 19061475, "valor": 19.38},
-  {"rubro": 684, "id_titulo": 19701500, "numero_titulo": 19061540, "valor": 22.10}
+  {"rubro": 813, "anio": null, "id_titulo": 19701433, "numero_titulo": 19061475, "valor": 19.38},
+  {"rubro": 684, "anio": null, "id_titulo": 19701500, "numero_titulo": 19061540, "valor": 22.10},
+  {"rubro": 3, "anio": 2025, "id_titulo": 19701441, "numero_titulo": 19061483, "valor": 10.10}
 ]}
 ```
 
@@ -298,7 +363,7 @@ Formato: `{"detail": "...", "error_code": "..."}`.
 | HTTP | error_code | Cuándo |
 |---|---|---|
 | 401 | `MISSING_TOKEN`, `INVALID_TOKEN`, `INVALID_CREDENTIALS` | token o credenciales inválidos |
-| 409 | `ORDEN_YA_EMITIDA` | la orden ya tiene título para ese trámite; incluye `id_titulo` y `numero_titulo` |
+| 409 | `ORDEN_YA_EMITIDA` | la orden ya tiene título para ese trámite (o ese año); incluye `id_titulo` y `numero_titulo` |
 | 422 | `CONTRIBUYENTE_NO_REGISTRADO` | la cédula no existe en GIM |
 | 422 | `CONTRIBUYENTE_DUPLICADO` | hay más de un contribuyente con esa cédula en GIM |
 | 422 | `FABRICANTE_NOT_FOUND`, `TIPO_VEHICULO_NOT_FOUND` | id inexistente en GIM |
@@ -306,8 +371,11 @@ Formato: `{"detail": "...", "error_code": "..."}`.
 | 422 | `PERIODO_FISCAL_NOT_FOUND` | no hay periodo fiscal vigente con SBU |
 | 422 | `PLACA_REQUERIDA` | el trámite lleva vehículo y no se envió `vehiculo.placa` |
 | 422 | `EXPLICACION_REQUERIDA` | el trámite (793, 794, 796) exige `explicacion` |
+| 422 | `AVALUO_FUERA_DE_TRAMO` | el avalúo del rodaje cae entre dos tramos de la regla de GIM |
+| 422 | `ANIO_INVALIDO` | año o fecha de servicio posterior a hoy |
 | 422 | `VALIDATION_ERROR` | campos faltantes o inválidos |
 | 404 | `ORDEN_NOT_FOUND` | la orden no existe |
 | 500 | `RUBRO_MAL_CONFIGURADO` | el rubro 813 o un sub-rubro no está configurado en GIM |
+| 500 | `REGLA_RODAJE_CAMBIO` | la regla de cálculo del rodaje (rubro 3 o 713) cambió en GIM; hay que actualizar la API |
 | 500 | `INTERNAL_ERROR` | error inesperado |
 | 503 | `GIM_NO_DISPONIBLE` | no hay conexión con la base de GIM |

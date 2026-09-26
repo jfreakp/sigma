@@ -1,0 +1,108 @@
+#created on: Nov 12, 2011
+package gim.src.rules.ec.gob.gim.pf2011.tax
+
+#list any import classes here.
+import ec.gob.gim.revenue.model.Entry;
+import ec.gob.gim.cadaster.model.Property;
+import ec.gob.gim.cadaster.model.Domain;
+import ec.gob.gim.revenue.model.adjunct.DomainTransfer;
+import ec.gob.gim.revenue.model.MunicipalBond;
+import ec.gob.gim.revenue.model.Adjunct;        
+import ec.gob.gim.revenue.model.Item;
+import java.math.BigDecimal;
+
+function BigDecimal calculateTaxAmount(MunicipalBond mb, Item $itemBase){
+                                
+        
+        if($itemBase.getEntry().getId().intValue() != 3 && 
+                $itemBase.getValue().compareTo(new BigDecimal(0)) < 0   ){
+                return new BigDecimal(2);
+        }
+        
+        #if($itemBase.getEntry().getId().intValue() != 3 && 
+        #        $itemBase.getTotal().compareTo(new BigDecimal(0)) == 0   ){
+        #        return new BigDecimal(2);
+        #}
+
+        if(mb.getExempt() && $itemBase.getEntry().getId().intValue() != 3){
+                return new BigDecimal(2);
+        }
+
+        if(mb.getIsNoPasiveSubject() && $itemBase.getEntry().getId().intValue() != 3){
+                return new BigDecimal(2);
+        }
+
+        if(!mb.getExempt() && $itemBase.getEntry().getId().intValue() != 3){
+                return new BigDecimal(0);
+        }
+
+        if(!mb.getIsNoPasiveSubject() && $itemBase.getEntry().getId().intValue() != 3){
+                return new BigDecimal(0);
+        }
+
+
+        if($itemBase.getEntry().getId().intValue() == 3){
+                return calculate(null, $itemBase, mb);
+        }
+
+        return new BigDecimal(0);
+}
+
+ 
+rule "Impuesto utilidad calculo de exento"
+        no-loop true
+        salience 50
+        when
+                $itemBase : Item(entry.code == "00713");
+                $mb : MunicipalBond();
+                eval
+                (($mb.getExempt() != null && $mb.getExempt()) || ($mb.getIsNoPasiveSubject() != null && $mb.getIsNoPasiveSubject()))
+        then
+                Item $itemBase1 = $mb.getItems().get(0);
+                $itemBase.setValue(calculateTaxAmount($mb, $itemBase1));
+                $itemBase.setTotal($itemBase.getValue());
+end
+
+
+rule "Impuesto utilidad calculo de NO exento"
+        no-loop true
+        salience 55
+        when
+                $itemBase : Item(entry.code == "00713");
+                $mb : MunicipalBond();
+                eval (!$mb.getExempt() || !$mb.getIsNoPasiveSubject()) 
+        then
+                Item $itemBase1 = $mb.getItems().get(0);
+                $itemBase.setValue(calculateTaxAmount($mb, $itemBase1));
+                $itemBase.setTotal($itemBase.getValue());
+end
+
+
+function BigDecimal calculate(Item $subItem, Item $itemBase, MunicipalBond $mb){
+        if($itemBase.getValue().doubleValue() <= 1000|| $mb.getExempt() || $mb.getIsNoPasiveSubject()){
+                return new BigDecimal(2);
+        }
+
+        if( $itemBase.getValue().doubleValue() > 1000|| !$mb.getExempt() || !$mb.getIsNoPasiveSubject()){
+                return new BigDecimal(0);
+        }
+        
+        return new BigDecimal(0);
+}
+
+
+rule "Rodaje vehiulos no pasa de la base"
+        no-loop true
+        salience 60
+        when
+                $subItem : Item(entry.code == "00713");
+                $itemBase1 : Item(entry.code == "00003");
+                $mb : MunicipalBond(items contains $subItem);
+        then
+                Item $itemBase = $mb.getItems().get(0);
+
+                $subItem.setValue(calculate($subItem, $itemBase, $mb));
+                $subItem.setTotal(calculate($subItem, $itemBase, $mb));
+end
+
+
