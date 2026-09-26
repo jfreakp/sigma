@@ -24,13 +24,13 @@ UNO = Decimal("1.00")
 @dataclass(frozen=True)
 class DatosVehiculo:
     placa: str
-    chasis: str | None
-    motor: str | None
-    anio: int | None
-    cilindraje: Decimal | None
-    tonelaje: Decimal | None
-    fabricante_id: int
-    tipo_vehiculo_id: int
+    chasis: str | None = None
+    motor: str | None = None
+    anio: int | None = None
+    cilindraje: Decimal | None = None
+    tonelaje: Decimal | None = None
+    fabricante_id: int | None = None
+    tipo_vehiculo_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -42,6 +42,7 @@ class LineaTitulo:
 @dataclass(frozen=True)
 class DatosTitulo:
     resident_id: int
+    identificacion: str  # groupingcode cuando el rubro no lleva vehículo
     direccion: str | None
     entry_id: int
     timeperiod_id: int | None
@@ -52,7 +53,8 @@ class DatosTitulo:
     descripcion: str
     referencia: str
     id_orden: str
-    vehiculo: DatosVehiculo
+    vehiculo: DatosVehiculo | None  # None si el rubro no lleva adjunto (p. ej. 794, 796)
+    base: Decimal  # 813: valor calculado; rubros de valor fijo: la cantidad (1.00)
     lineas: list[LineaTitulo]  # la primera es el rubro principal
     ahora: datetime
 
@@ -75,25 +77,27 @@ def _a_float(valor: Decimal | None) -> float | None:
 async def emitir_titulo(db: AsyncSession, datos: DatosTitulo) -> TituloEmitido:
     vehiculo = datos.vehiculo
 
-    # Como la pantalla (AdjunctHome.findByCode): siempre un vehículo nuevo.
-    adjunct_id = await _nextval(db, "adjunct_seq")
-    db.add(Adjunct(id=adjunct_id, code=vehiculo.placa))
-    await db.flush()
-    db.add(
-        Vehicle(
-            id=adjunct_id,
-            licenseplate=vehiculo.placa,
-            vin=vehiculo.chasis,
-            enginenumber=vehiculo.motor,
-            year=vehiculo.anio,
-            cubiccentimeters=_a_float(vehiculo.cilindraje),
-            weightcapacity=_a_float(vehiculo.tonelaje),
-            vehiclemaker_id=vehiculo.fabricante_id,
-            vehicletype_id=vehiculo.tipo_vehiculo_id,
-            ordernumber=datos.id_orden,
+    adjunct_id = None
+    if vehiculo is not None:
+        # Como la pantalla (AdjunctHome.findByCode): siempre un vehículo nuevo.
+        adjunct_id = await _nextval(db, "adjunct_seq")
+        db.add(Adjunct(id=adjunct_id, code=vehiculo.placa))
+        await db.flush()
+        db.add(
+            Vehicle(
+                id=adjunct_id,
+                licenseplate=vehiculo.placa,
+                vin=vehiculo.chasis,
+                enginenumber=vehiculo.motor,
+                year=vehiculo.anio,
+                cubiccentimeters=_a_float(vehiculo.cilindraje),
+                weightcapacity=_a_float(vehiculo.tonelaje),
+                vehiclemaker_id=vehiculo.fabricante_id,
+                vehicletype_id=vehiculo.tipo_vehiculo_id,
+                ordernumber=datos.id_orden,
+            )
         )
-    )
-    await db.flush()
+        await db.flush()
 
     bond_id = await _nextval(db, "municipalbond_seq")
     number = await _nextval(db, "municipalbondnumber")
@@ -112,7 +116,8 @@ async def emitir_titulo(db: AsyncSession, datos: DatosTitulo) -> TituloEmitido:
             bondaddress="",
             entry_id=datos.entry_id,
             adjunct_id=adjunct_id,
-            groupingcode=vehiculo.placa,
+            # GIM agrupa por el código del adjunto; sin adjunto, por la identificación.
+            groupingcode=vehiculo.placa if vehiculo is not None else datos.identificacion,
             description=datos.descripcion,
             reference=datos.referencia,
             emitter_id=datos.emisor_resident_id,
@@ -128,7 +133,7 @@ async def emitir_titulo(db: AsyncSession, datos: DatosTitulo) -> TituloEmitido:
             emisiontime=(datos.ahora + timedelta(milliseconds=1)).time(),
             servicedate=fecha,
             expirationdate=fecha,
-            base=datos.lineas[0].valor,
+            base=datos.base,
             value=total,
             balance=total,
             paidtotal=total,

@@ -1,11 +1,19 @@
-# API Matriculación → GIM (Revisión Vehicular)
+# API Matriculación → GIM
 
-API (FastAPI) que recibe órdenes del Sistema de Matriculación y **emite el título de crédito en GIM**
-igual que la pantalla de emisión de GIM1: rubro 813 más el sub-rubro 444 (costo de proceso de datos),
-en estado PENDIENTE. Guarda la relación orden ↔ título en su propio esquema (`matriculacion`) dentro
-de la base de GIM y devuelve el id del título.
+API (FastAPI) que recibe órdenes del Sistema de Matriculación y **emite los títulos de crédito en GIM**
+igual que la pantalla de emisión de GIM1, en estado PENDIENTE, siempre con el sub-rubro 444 (costo de
+proceso de datos). Guarda la relación orden ↔ títulos en su propio esquema (`matriculacion`) dentro de la
+base de GIM y devuelve el id de cada título. Una orden puede tener un título por trámite.
 
-- Diseño: `docs/superpowers/specs/2026-09-25-emision-titulo-gim-design.md`
+| Trámite | Rubro | Endpoint |
+|---|---|---|
+| Revisión vehicular | 813 | `POST /api/v1/revision-vehicular` |
+| Duplicado de matrícula, gravámenes, modificación de características, bloqueo/desbloqueo, CUV, CVP | 684, 789, 790, 793, 794, 795, 796 | `POST /api/v1/tramites-vehiculares` |
+
+Rodaje (3) y recargo por retraso (685) están pendientes.
+
+- Diseño: `docs/superpowers/specs/2026-09-25-emision-titulo-gim-design.md` (revisión vehicular) y
+  `docs/superpowers/specs/2026-09-26-tramites-valor-fijo-design.md` (trámites de valor fijo)
 - Colección de Postman: `postman/matriculacion-gim-api.postman_collection.json`
 
 ## Cómo funciona
@@ -63,7 +71,7 @@ En `diario_20260505` ya existen:
 |---|---|
 | Emisor de sistema "USUARIO SISTEMA MATRICULACION" | `resident.id` **3008801** |
 | Usuaria de pruebas mfalvarado | `resident.id` **307513** (úsala como emisora para ver los títulos con su usuario en GIM1) |
-| Esquema `matriculacion` (migraciones aplicadas) | versión `0002` |
+| Esquema `matriculacion` (migraciones aplicadas) | versión `0003` |
 | Client `isburo-matriculacion` | creado; secreto en el entorno de Postman local |
 
 En una base de GIM nueva, ver los pasos 2 a 4 de [Pasar a producción](#pasar-a-producción).
@@ -158,7 +166,7 @@ JWT_EXPIRE_MINUTES=60
 alembic upgrade head
 ```
 
-Crea `matriculacion.client`, `matriculacion.orden_titulo` y `matriculacion.alembic_version`. No toca `gimprod`.
+Crea `matriculacion.client`, `matriculacion.orden_titulo` (única por orden + rubro) y `matriculacion.alembic_version`. No toca `gimprod`.
 
 ### 6. Dar de alta el client de ISBURO
 
@@ -238,9 +246,50 @@ Respuesta `201`:
 {"id_orden": "MAT-2026-000123", "id_titulo": 19701433, "numero_titulo": 19061475, "valor": 19.38, "exitoso": true}
 ```
 
-### `GET /api/v1/revision-vehicular/orden/{id_orden}`
+### `POST /api/v1/tramites-vehiculares`
 
-Devuelve la misma respuesta para una orden ya emitida.
+```json
+{
+  "id_orden": "MAT-2026-000123",
+  "tramite": "DUPLICADO_MATRICULA",
+  "numero_identificacion": "1104971302",
+  "vehiculo": { "placa": "LBA-2213" },
+  "explicacion": null,
+  "referencia": null
+}
+```
+
+| `tramite` | Rubro | Valor (GIM, 2026) | `vehiculo.placa` | `explicacion` |
+|---|---|---|---|---|
+| `DUPLICADO_MATRICULA` | 684 | 22,00 + 0,10 | obligatoria | opcional |
+| `INSCRIPCION_GRAVAMEN` | 789 | 10,00 + 0,10 | obligatoria | opcional |
+| `LEVANTAMIENTO_GRAVAMEN` | 790 | 10,00 + 0,10 | obligatoria | opcional |
+| `MODIFICACION_CARACTERISTICAS` | 793 | 8,00 + 0,10 | obligatoria | **obligatoria** (modificación o cambio de color) |
+| `BLOQUEO_DESBLOQUEO` | 794 | 10,00 + 0,10 | no lleva | **obligatoria** (trámite y placa) |
+| `CERTIFICADO_UNICO_VEHICULAR` | 795 | 10,00 + 0,10 | obligatoria | opcional |
+| `CERTIFICADO_POSEER_VEHICULO` | 796 | 10,00 + 0,10 | no lleva | **obligatoria** (con la placa) |
+
+- El valor se lee de GIM (definición vigente del rubro × 1 + sub-rubro 444): si Rentas lo cambia, la API lo toma sola.
+- Igual que la pantalla, los datos del vehículo (chasis, motor, año, cilindraje, tonelaje, fabricante, tipo) se
+  **copian del último vehículo registrado con esa placa** en GIM. Si se envían en `vehiculo`, reemplazan a los copiados.
+- `explicacion` y `referencia` quedan vacías si no se envían.
+
+Respuesta `201`:
+
+```json
+{"id_orden": "MAT-2026-000123", "tramite": "DUPLICADO_MATRICULA", "id_titulo": 19701500, "numero_titulo": 19061540, "valor": 22.10, "exitoso": true}
+```
+
+### `GET /api/v1/ordenes/{id_orden}`
+
+Todos los títulos de la orden:
+
+```json
+{"id_orden": "MAT-2026-000123", "titulos": [
+  {"rubro": 813, "id_titulo": 19701433, "numero_titulo": 19061475, "valor": 19.38},
+  {"rubro": 684, "id_titulo": 19701500, "numero_titulo": 19061540, "valor": 22.10}
+]}
+```
 
 ### Errores
 
@@ -249,12 +298,14 @@ Formato: `{"detail": "...", "error_code": "..."}`.
 | HTTP | error_code | Cuándo |
 |---|---|---|
 | 401 | `MISSING_TOKEN`, `INVALID_TOKEN`, `INVALID_CREDENTIALS` | token o credenciales inválidos |
-| 409 | `ORDEN_YA_EMITIDA` | la orden ya tiene título; incluye `id_titulo` y `numero_titulo` |
+| 409 | `ORDEN_YA_EMITIDA` | la orden ya tiene título para ese trámite; incluye `id_titulo` y `numero_titulo` |
 | 422 | `CONTRIBUYENTE_NO_REGISTRADO` | la cédula no existe en GIM |
 | 422 | `CONTRIBUYENTE_DUPLICADO` | hay más de un contribuyente con esa cédula en GIM |
 | 422 | `FABRICANTE_NOT_FOUND`, `TIPO_VEHICULO_NOT_FOUND` | id inexistente en GIM |
 | 422 | `TARIFA_NOT_FOUND` | no hay tarifa activa para ese tipo y número de revisión |
 | 422 | `PERIODO_FISCAL_NOT_FOUND` | no hay periodo fiscal vigente con SBU |
+| 422 | `PLACA_REQUERIDA` | el trámite lleva vehículo y no se envió `vehiculo.placa` |
+| 422 | `EXPLICACION_REQUERIDA` | el trámite (793, 794, 796) exige `explicacion` |
 | 422 | `VALIDATION_ERROR` | campos faltantes o inválidos |
 | 404 | `ORDEN_NOT_FOUND` | la orden no existe |
 | 500 | `RUBRO_MAL_CONFIGURADO` | el rubro 813 o un sub-rubro no está configurado en GIM |

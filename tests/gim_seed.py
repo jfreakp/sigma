@@ -12,12 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.gim.models import (
     Address,
+    Adjunct,
     Entry,
     EntryDefinition,
     EntryStructure,
     FiscalPeriod,
     Resident,
     SystemParameter,
+    Vehicle,
     VehicleMaker,
     VehicleRevisionValues,
     VehicleType,
@@ -36,6 +38,17 @@ TIMEPERIOD_ID = 1
 FISCALPERIOD_ID = 16
 SBU = Decimal("482.00")
 STATUS_PENDIENTE_ID = 3
+ADJUNTO_VEHICULO = "ec.gob.gim.revenue.model.adjunct.Vehicle"
+# rubro: (nombre, valor vigente, lleva vehículo) — copiado de diario_20260505
+RUBROS_VALOR_FIJO = {
+    684: ("DUPLICADO DE MATRÍCULA", Decimal("22.00"), True),
+    789: ("INSCRIPCIÓN DE GRAVAMEN", Decimal("10.00"), True),
+    790: ("LEVANTAMIENTO DE GRAVAMEN", Decimal("10.00"), True),
+    793: ("MODIFICACIÓN DE CARACTERÍSTICAS DEL VEHÍCULO", Decimal("8.00"), True),
+    794: ("BLOQUEO Y DESBLOQUEO EN EL SISTEMA", Decimal("10.00"), False),
+    795: ("CERTIFICADO ÚNICO VEHICULAR (CUV)", Decimal("10.00"), True),
+    796: ("CERTIFICADO DE POSEER VEHÍCULO (CVP)", Decimal("10.00"), False),
+}
 
 
 async def add_resident(session: AsyncSession, resident_id: int, cedula: str, nombre: str, calle: str | None) -> None:
@@ -53,13 +66,27 @@ async def add_resident(session: AsyncSession, resident_id: int, cedula: str, nom
         await session.flush()
 
 
+async def add_vehicle(session: AsyncSession, adjunct_id: int, placa: str, **campos) -> None:
+    session.add(Adjunct(id=adjunct_id, code=placa))
+    await session.flush()
+    session.add(Vehicle(id=adjunct_id, licenseplate=placa, **campos))
+    await session.flush()
+
+
 async def seed_gim(session: AsyncSession) -> None:
     hoy = date.today()
     session.add_all(
         [
             VehicleMaker(id=FABRICANTE_ID, name="KIA"),
             VehicleType(id=TIPO_VEHICULO_ID, name="AUTOMOVIL"),
-            Entry(id=ENTRY_REVISION_ID, code="00813", name="REVISION VEHICULAR", isactive=True, timeperiod_id=TIMEPERIOD_ID),
+            Entry(
+                id=ENTRY_REVISION_ID,
+                code="00813",
+                name="REVISION VEHICULAR",
+                isactive=True,
+                timeperiod_id=TIMEPERIOD_ID,
+                adjunctclassname=ADJUNTO_VEHICULO,
+            ),
             Entry(
                 id=ENTRY_PROCESO_DATOS_ID,
                 code="00444",
@@ -84,6 +111,19 @@ async def seed_gim(session: AsyncSession) -> None:
             VehicleRevisionValues(id=3, typevehicle="PESADOS", revisionnumber="PRIMERA", valuepercentage=Decimal("12.00"), isactive=False),
         ]
     )
+    session.add_all(
+        [
+            Entry(
+                id=entry_id,
+                code=f"{entry_id:05d}",
+                name=nombre,
+                isactive=True,
+                timeperiod_id=TIMEPERIOD_ID,
+                adjunctclassname=ADJUNTO_VEHICULO if lleva_vehiculo else None,
+            )
+            for entry_id, (nombre, _, lleva_vehiculo) in RUBROS_VALOR_FIJO.items()
+        ]
+    )
     await session.flush()
     session.add_all(
         [
@@ -93,6 +133,17 @@ async def seed_gim(session: AsyncSession) -> None:
             EntryStructure(id=1108, entrystructuretype="NORMAL", orden=1, child_id=ENTRY_PROCESO_DATOS_ID, parent_id=ENTRY_REVISION_ID),
         ]
     )
+    for entry_id, (_, valor, _) in RUBROS_VALOR_FIJO.items():
+        session.add(
+            EntryDefinition(
+                id=5000 + entry_id, entry_id=entry_id, value=valor, iscurrent=True, startdate=date(2026, 1, 1), entrydefinitiontype="VALUE"
+            )
+        )
+        session.add(
+            EntryStructure(
+                id=6000 + entry_id, entrystructuretype="NORMAL", orden=1, child_id=ENTRY_PROCESO_DATOS_ID, parent_id=entry_id
+            )
+        )
     await session.flush()
     await add_resident(session, CONTRIBUYENTE_ID, CONTRIBUYENTE_CEDULA, "ALVARADO GONZALEZ MARIA FERNANDA", CONTRIBUYENTE_DIRECCION)
     await add_resident(session, CONTRIBUYENTE_SIN_DIRECCION_ID, CONTRIBUYENTE_SIN_DIRECCION_CEDULA, "SIN DIRECCION", None)

@@ -9,6 +9,7 @@ from app.core.errors import AppHTTPException
 from app.gim.models import Entry, EntryDefinition, MunicipalBond
 from app.models.orden_titulo import OrdenTitulo
 from app.schemas.revision_vehicular import EmisionRevisionRequest
+from app.services import emision_service
 from app.services import revision_vehicular_service as service
 from tests.gim_seed import (
     CONTRIBUYENTE_CEDULA,
@@ -76,7 +77,7 @@ async def test_emite_titulo_y_guarda_orden(db_session, gim_seed, api_client_row)
     # sin referencia en la petición: toma la explicación
     assert bond.reference == "REVISION VEHICULAR LBA-2213 2026"
 
-    orden = await service.buscar_orden(db_session, "MAT-2026-000123")
+    orden = await emision_service.buscar_orden(db_session, "MAT-2026-000123", 813)
     assert orden.id_titulo == resultado.id_titulo
     assert orden.numero_titulo == resultado.numero_titulo
     assert orden.valor == Decimal("19.38")
@@ -126,16 +127,16 @@ async def test_orden_repetida_en_carrera_deshace_la_emision(db_session, gim_seed
     await db_session.commit()
     antes = await _contar_titulos(db_session)
 
-    buscar_real = service.buscar_orden
+    buscar_real = emision_service.buscar_orden
     llamadas = {"n": 0}
 
-    async def buscar_que_no_ve_la_primera_vez(db, id_orden):
+    async def buscar_que_no_ve_la_primera_vez(db, id_orden, entry_id):
         llamadas["n"] += 1
         if llamadas["n"] == 1:
             return None
-        return await buscar_real(db, id_orden)
+        return await buscar_real(db, id_orden, entry_id)
 
-    monkeypatch.setattr(service, "buscar_orden", buscar_que_no_ve_la_primera_vez)
+    monkeypatch.setattr(emision_service, "buscar_orden", buscar_que_no_ve_la_primera_vez)
 
     with pytest.raises(AppHTTPException) as exc_info:
         await service.emitir_revision_vehicular(db_session, _payload(), client_id=api_client_row.id, ahora=AHORA)
@@ -203,10 +204,10 @@ async def test_subrubro_sin_definicion_vigente(db_session, gim_seed, api_client_
     assert (exc_info.value.status_code, exc_info.value.error_code) == (500, "RUBRO_MAL_CONFIGURADO")
 
 
-async def test_obtener_por_orden(db_session, gim_seed, api_client_row):
+async def test_listar_orden(db_session, gim_seed, api_client_row):
     emitido = await service.emitir_revision_vehicular(db_session, _payload(), client_id=api_client_row.id, ahora=AHORA)
-    assert await service.obtener_por_orden(db_session, "MAT-2026-000123") == emitido
+    assert await emision_service.listar_orden(db_session, "MAT-2026-000123") == [emitido]
 
     with pytest.raises(AppHTTPException) as exc_info:
-        await service.obtener_por_orden(db_session, "NO-EXISTE")
+        await emision_service.listar_orden(db_session, "NO-EXISTE")
     assert (exc_info.value.status_code, exc_info.value.error_code) == (404, "ORDEN_NOT_FOUND")

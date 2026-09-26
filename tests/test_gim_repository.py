@@ -18,6 +18,7 @@ from tests.gim_seed import (
     STATUS_PENDIENTE_ID,
     TIPO_VEHICULO_ID,
     add_resident,
+    add_vehicle,
 )
 
 
@@ -86,3 +87,14 @@ async def test_get_pending_status_id_missing(db_session, gim_seed):
     )
     with pytest.raises(LookupError):
         await repo.get_pending_status_id(db_session)
+
+
+async def test_get_latest_vehicle_by_plate(db_session, gim_seed):
+    await add_vehicle(db_session, 500, "AAX-0097", year=2005)
+    await add_vehicle(db_session, 501, "AAX-0097", year=2008)
+    await add_vehicle(db_session, 502, "OTRA-001", year=2020)
+
+    vehiculo = await repo.get_latest_vehicle_by_plate(db_session, "AAX-0097")
+
+    assert (vehiculo.id, vehiculo.year) == (501, 2008)
+    assert await repo.get_latest_vehicle_by_plate(db_session, "NO-EXISTE") is None
