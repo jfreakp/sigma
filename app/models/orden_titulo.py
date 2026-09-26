@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Numeric, String, UniqueConstraint
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -12,7 +12,14 @@ class OrdenTitulo(Base):
     """Relación entre la orden del Sistema de Matriculación y el título emitido en GIM."""
 
     __tablename__ = "orden_titulo"
-    __table_args__ = (UniqueConstraint("id_orden", name="uq_orden_titulo_id_orden"),)
+    # Una orden puede generar varios títulos: uno por rubro y, en los rubros anuales
+    # (rodaje, recargo), uno por año. anio es NULL en los demás; NULLS NOT DISTINCT
+    # hace que dos NULL cuenten como iguales.
+    __table_args__ = (
+        UniqueConstraint(
+            "id_orden", "entry_id", "anio", name="uq_orden_titulo_orden_rubro_anio", postgresql_nulls_not_distinct=True
+        ),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     id_orden: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -20,6 +27,7 @@ class OrdenTitulo(Base):
     id_titulo: Mapped[int] = mapped_column(BigInteger, nullable=False)
     numero_titulo: Mapped[int] = mapped_column(BigInteger, nullable=False)
     entry_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    anio: Mapped[int | None] = mapped_column(Integer, nullable=True)
     valor: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     client_id: Mapped[int] = mapped_column(ForeignKey("matriculacion.client.id"), nullable=False)
     request: Mapped[dict] = mapped_column(JSONB, nullable=False)

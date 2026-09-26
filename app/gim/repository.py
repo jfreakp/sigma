@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.gim.models import (
     Address,
+    Adjunct,
     Entry,
     EntryDefinition,
     EntryStructure,
@@ -15,6 +16,7 @@ from app.gim.models import (
     SystemParameter,
     VehicleMaker,
     VehicleRevisionValues,
+    Vehicle,
     VehicleType,
 )
 
@@ -41,6 +43,18 @@ async def vehiclemaker_exists(db: AsyncSession, vehiclemaker_id: int) -> bool:
 
 async def vehicletype_exists(db: AsyncSession, vehicletype_id: int) -> bool:
     return await db.get(VehicleType, vehicletype_id) is not None
+
+
+async def get_latest_vehicle_by_plate(db: AsyncSession, placa: str) -> Vehicle | None:
+    # Igual que Adjunct.findByCode de GIM1 ("order by o.id DESC"): el más reciente con esa placa.
+    result = await db.execute(
+        select(Vehicle)
+        .join(Adjunct, Adjunct.id == Vehicle.id)
+        .where(Adjunct.code == placa)
+        .order_by(Adjunct.id.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
 
 
 async def get_revision_percentage(db: AsyncSession, tipo_general: str, numero_revision: str) -> Decimal | None:
@@ -85,6 +99,15 @@ async def get_child_entry_ids(db: AsyncSession, parent_entry_id: int) -> list[in
 async def get_current_definition_value(db: AsyncSession, entry_id: int) -> Decimal | None:
     return await db.scalar(
         select(EntryDefinition.value)
+        .where(EntryDefinition.entry_id == entry_id, EntryDefinition.iscurrent.is_(True))
+        .order_by(EntryDefinition.startdate.desc(), EntryDefinition.id.desc())
+        .limit(1)
+    )
+
+
+async def get_current_definition_rule(db: AsyncSession, entry_id: int) -> str | None:
+    return await db.scalar(
+        select(EntryDefinition.rule)
         .where(EntryDefinition.entry_id == entry_id, EntryDefinition.iscurrent.is_(True))
         .order_by(EntryDefinition.startdate.desc(), EntryDefinition.id.desc())
         .limit(1)

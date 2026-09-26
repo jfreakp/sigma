@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date, datetime, time
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -5,8 +6,9 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import text
 
 from app.core.config import settings
-from app.gim.emision import DatosTitulo, DatosVehiculo, LineaTitulo, emitir_titulo
+from app.gim.emision import DatosTitulo, DatosVehiculo, LineaTitulo, crear_adjunto_vehiculo, emitir_titulo
 from tests.gim_seed import (
+    CONTRIBUYENTE_CEDULA,
     CONTRIBUYENTE_DIRECCION,
     CONTRIBUYENTE_ID,
     ENTRY_PROCESO_DATOS_ID,
@@ -24,6 +26,7 @@ AHORA = datetime(2026, 9, 25, 10, 30, 15, 123000, tzinfo=ZoneInfo("America/Guaya
 def _datos(vehiculo: DatosVehiculo | None = None) -> DatosTitulo:
     return DatosTitulo(
         resident_id=CONTRIBUYENTE_ID,
+        identificacion=CONTRIBUYENTE_CEDULA,
         direccion=CONTRIBUYENTE_DIRECCION,
         entry_id=ENTRY_REVISION_ID,
         timeperiod_id=TIMEPERIOD_ID,
@@ -45,6 +48,7 @@ def _datos(vehiculo: DatosVehiculo | None = None) -> DatosTitulo:
             fabricante_id=FABRICANTE_ID,
             tipo_vehiculo_id=TIPO_VEHICULO_ID,
         ),
+        base=Decimal("19.28"),
         lineas=[LineaTitulo(ENTRY_REVISION_ID, Decimal("19.28")), LineaTitulo(ENTRY_PROCESO_DATOS_ID, Decimal("0.10"))],
         ahora=AHORA,
     )
@@ -194,3 +198,78 @@ async def test_vehiculo_con_datos_opcionales_vacios(db_session, gim_seed):
         id=titulo.id,
     )
     assert vehicle == {"vin": None, "enginenumber": None, "year": None, "cubiccentimeters": None, "weightcapacity": None}
+
+
+async def test_titulo_sin_vehiculo_agrupa_por_cedula(db_session, gim_seed):
+    datos = replace(
+        _datos(),
+        vehiculo=None,
+        entry_id=794,
+        base=Decimal("1.00"),
+        lineas=[LineaTitulo(794, Decimal("10.00")), LineaTitulo(ENTRY_PROCESO_DATOS_ID, Decimal("0.10"))],
+    )
+    titulo = await emitir_titulo(db_session, datos)
+
+    bond = await _fila(
+        db_session, "SELECT adjunct_id, groupingcode, base, value FROM gimprod.municipalbond WHERE id = :id", id=titulo.id
+    )
+    assert bond == {"adjunct_id": None, "groupingcode": CONTRIBUYENTE_CEDULA, "base": Decimal("1.00"), "value": Decimal("10.10")}
+
+
+async def test_item_con_valor_distinto_del_total_y_fechas_explicitas(db_session, gim_seed):
+    # Rodaje: el item guarda el avalúo en value y el tramo en total; servicio y vencimiento propios.
+    datos = replace(
+        _datos(),
+        base=Decimal("5600.00"),
+        lineas=[
+            LineaTitulo(ENTRY_REVISION_ID, Decimal("10.00"), valor_item=Decimal("5600.00")),
+            LineaTitulo(ENTRY_PROCESO_DATOS_ID, Decimal("0.10")),
+        ],
+        fecha_servicio=date(2025, 1, 1),
+        fecha_vencimiento=date(2025, 6, 30),
+    )
+    titulo = await emitir_titulo(db_session, datos)
+
+    bond = await _fila(
+        db_session,
+        "SELECT base, value, servicedate, expirationdate, emisiondate FROM gimprod.municipalbond WHERE id = :id",
+        id=titulo.id,
+    )
+    assert bond == {
+        "base": Decimal("5600.00"),
+        "value": Decimal("10.10"),
+        "servicedate": date(2025, 1, 1),
+        "expirationdate": date(2025, 6, 30),
+        "emisiondate": date(2026, 9, 25),
+    }
+    item = await _fila(
+        db_session, "SELECT value, total FROM gimprod.item WHERE municipalbond_id = :id AND ordernumber = 1", id=titulo.id
+    )
+    assert item == {"value": Decimal("5600.00"), "total": Decimal("10.00")}
+
+
+async def test_vencimiento_por_defecto_es_la_fecha_de_servicio(db_session, gim_seed):
+    titulo = await emitir_titulo(db_session, replace(_datos(), fecha_servicio=date(2025, 5, 20)))
+
+    bond = await _fila(
+        db_session, "SELECT servicedate, expirationdate FROM gimprod.municipalbond WHERE id = :id", id=titulo.id
+    )
+    assert bond == {"servicedate": date(2025, 5, 20), "expirationdate": date(2025, 5, 20)}
+
+
+async def test_titulos_que_comparten_adjunto(db_session, gim_seed):
+    datos = _datos()
+    adjunct_id = await crear_adjunto_vehiculo(db_session, datos.vehiculo, datos.id_orden)
+
+    primero = await emitir_titulo(db_session, replace(datos, adjunct_id=adjunct_id))
+    segundo = await emitir_titulo(db_session, replace(datos, adjunct_id=adjunct_id))
+
+    adjuntos = (
+        await db_session.execute(
+            text("SELECT DISTINCT adjunct_id FROM gimprod.municipalbond WHERE id IN (:a, :b)"),
+            {"a": primero.id, "b": segundo.id},
+        )
+    ).scalars().all()
+    assert adjuntos == [adjunct_id]
+    vehiculos = await db_session.scalar(text("SELECT count(*) FROM gimprod.adjunct WHERE code = 'LBA-2213'"))
+    assert vehiculos == 1

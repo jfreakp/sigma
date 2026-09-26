@@ -24,24 +24,26 @@ UNO = Decimal("1.00")
 @dataclass(frozen=True)
 class DatosVehiculo:
     placa: str
-    chasis: str | None
-    motor: str | None
-    anio: int | None
-    cilindraje: Decimal | None
-    tonelaje: Decimal | None
-    fabricante_id: int
-    tipo_vehiculo_id: int
+    chasis: str | None = None
+    motor: str | None = None
+    anio: int | None = None
+    cilindraje: Decimal | None = None
+    tonelaje: Decimal | None = None
+    fabricante_id: int | None = None
+    tipo_vehiculo_id: int | None = None
 
 
 @dataclass(frozen=True)
 class LineaTitulo:
     entry_id: int
-    valor: Decimal
+    valor: Decimal  # item.total
+    valor_item: Decimal | None = None  # item.value si difiere del total (rodaje: el avalúo)
 
 
 @dataclass(frozen=True)
 class DatosTitulo:
     resident_id: int
+    identificacion: str  # groupingcode cuando el rubro no lleva vehículo
     direccion: str | None
     entry_id: int
     timeperiod_id: int | None
@@ -52,9 +54,13 @@ class DatosTitulo:
     descripcion: str
     referencia: str
     id_orden: str
-    vehiculo: DatosVehiculo
+    vehiculo: DatosVehiculo | None  # None si el rubro no lleva adjunto (p. ej. 794, 796)
+    base: Decimal  # 813: valor calculado; rubros de valor fijo: la cantidad (1.00)
     lineas: list[LineaTitulo]  # la primera es el rubro principal
     ahora: datetime
+    fecha_servicio: date | None = None  # por defecto, la fecha de emisión
+    fecha_vencimiento: date | None = None  # por defecto, la fecha de servicio
+    adjunct_id: int | None = None  # adjunto ya creado y compartido por varios títulos
 
 
 @dataclass(frozen=True)
@@ -72,10 +78,9 @@ def _a_float(valor: Decimal | None) -> float | None:
     return float(valor) if valor is not None else None
 
 
-async def emitir_titulo(db: AsyncSession, datos: DatosTitulo) -> TituloEmitido:
-    vehiculo = datos.vehiculo
-
-    # Como la pantalla (AdjunctHome.findByCode): siempre un vehículo nuevo.
+async def crear_adjunto_vehiculo(db: AsyncSession, vehiculo: DatosVehiculo, id_orden: str) -> int:
+    # Como la pantalla (AdjunctHome.findByCode): siempre un vehículo nuevo. En una
+    # emisión de varios años, todos los títulos comparten este mismo adjunto.
     adjunct_id = await _nextval(db, "adjunct_seq")
     db.add(Adjunct(id=adjunct_id, code=vehiculo.placa))
     await db.flush()
@@ -90,15 +95,25 @@ async def emitir_titulo(db: AsyncSession, datos: DatosTitulo) -> TituloEmitido:
             weightcapacity=_a_float(vehiculo.tonelaje),
             vehiclemaker_id=vehiculo.fabricante_id,
             vehicletype_id=vehiculo.tipo_vehiculo_id,
-            ordernumber=datos.id_orden,
+            ordernumber=id_orden,
         )
     )
     await db.flush()
+    return adjunct_id
+
+
+async def emitir_titulo(db: AsyncSession, datos: DatosTitulo) -> TituloEmitido:
+    vehiculo = datos.vehiculo
+
+    adjunct_id = datos.adjunct_id
+    if adjunct_id is None and vehiculo is not None:
+        adjunct_id = await crear_adjunto_vehiculo(db, vehiculo, datos.id_orden)
 
     bond_id = await _nextval(db, "municipalbond_seq")
     number = await _nextval(db, "municipalbondnumber")
     total = sum((linea.valor for linea in datos.lineas), CERO)
     fecha = datos.ahora.date()
+    fecha_servicio = datos.fecha_servicio or fecha
     db.add(
         MunicipalBond(
             id=bond_id,
@@ -112,7 +127,8 @@ async def emitir_titulo(db: AsyncSession, datos: DatosTitulo) -> TituloEmitido:
             bondaddress="",
             entry_id=datos.entry_id,
             adjunct_id=adjunct_id,
-            groupingcode=vehiculo.placa,
+            # GIM agrupa por el código del adjunto; sin adjunto, por la identificación.
+            groupingcode=vehiculo.placa if vehiculo is not None else datos.identificacion,
             description=datos.descripcion,
             reference=datos.referencia,
             emitter_id=datos.emisor_resident_id,
@@ -126,9 +142,9 @@ async def emitir_titulo(db: AsyncSession, datos: DatosTitulo) -> TituloEmitido:
             emisiondate=fecha,
             # En GIM la emisión se registra un instante después de la creación.
             emisiontime=(datos.ahora + timedelta(milliseconds=1)).time(),
-            servicedate=fecha,
-            expirationdate=fecha,
-            base=datos.lineas[0].valor,
+            servicedate=fecha_servicio,
+            expirationdate=datos.fecha_vencimiento or fecha_servicio,
+            base=datos.base,
             value=total,
             balance=total,
             paidtotal=total,
@@ -160,7 +176,7 @@ async def emitir_titulo(db: AsyncSession, datos: DatosTitulo) -> TituloEmitido:
                 entry_id=linea.entry_id,
                 ordernumber=orden,
                 amount=UNO,
-                value=linea.valor,
+                value=linea.valor_item if linea.valor_item is not None else linea.valor,
                 total=linea.valor,
                 istaxable=False,
             )

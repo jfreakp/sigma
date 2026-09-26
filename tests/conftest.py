@@ -13,6 +13,7 @@ from app.main import app
 from app.models.base import Base
 from app.models.client import Client
 from app.models.orden_titulo import OrdenTitulo  # noqa: F401  (registra la tabla en Base.metadata)
+from app.models.tramo_rodaje import ReglaGimReplicada, TramoRodaje  # noqa: F401
 
 GIM_SCHEMA_SQL = Path(__file__).parent / "gim_schema.sql"
 
