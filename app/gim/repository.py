@@ -105,6 +105,15 @@ async def get_current_definition_value(db: AsyncSession, entry_id: int) -> Decim
     )
 
 
+async def get_current_definition_rule(db: AsyncSession, entry_id: int) -> str | None:
+    return await db.scalar(
+        select(EntryDefinition.rule)
+        .where(EntryDefinition.entry_id == entry_id, EntryDefinition.iscurrent.is_(True))
+        .order_by(EntryDefinition.startdate.desc(), EntryDefinition.id.desc())
+        .limit(1)
+    )
+
+
 async def get_pending_status_id(db: AsyncSession) -> int:
     value = await db.scalar(select(SystemParameter.value).where(SystemParameter.name == PENDING_STATUS_PARAMETER))
     if value is None:

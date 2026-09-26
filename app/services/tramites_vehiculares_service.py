@@ -10,13 +10,12 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.gim import repository as repo
-from app.gim.emision import DatosVehiculo, LineaTitulo
-from app.gim.models import Vehicle
-from app.schemas.tramites_vehiculares import Tramite, TramiteVehicularRequest, VehiculoTramiteIn
+from app.gim.emision import LineaTitulo
+from app.schemas.tramites_vehiculares import Tramite, TramiteVehicularRequest
 from app.services.emision_service import (
     ResultadoEmision,
     ahora_local,
+    datos_vehiculo_desde_placa,
     emitir_y_registrar,
     error,
     lineas_de_subrubros,
@@ -50,28 +49,6 @@ TRAMITES: dict[Tramite, ConfigTramite] = {
 }
 
 
-def _a_decimal(valor: float | None) -> Decimal | None:
-    return Decimal(str(valor)) if valor is not None else None
-
-
-def _elegir(enviado, anterior):
-    return enviado if enviado is not None else anterior
-
-
-async def _datos_vehiculo(db: AsyncSession, vehiculo: VehiculoTramiteIn) -> DatosVehiculo:
-    anterior = await repo.get_latest_vehicle_by_plate(db, vehiculo.placa) or Vehicle()
-    return DatosVehiculo(
-        placa=vehiculo.placa,
-        chasis=_elegir(vehiculo.chasis, anterior.vin),
-        motor=_elegir(vehiculo.motor, anterior.enginenumber),
-        anio=_elegir(vehiculo.anio, anterior.year),
-        cilindraje=_elegir(vehiculo.cilindraje, _a_decimal(anterior.cubiccentimeters)),
-        tonelaje=_elegir(vehiculo.tonelaje, _a_decimal(anterior.weightcapacity)),
-        fabricante_id=_elegir(vehiculo.fabricante_id, anterior.vehiclemaker_id),
-        tipo_vehiculo_id=_elegir(vehiculo.tipo_vehiculo_id, anterior.vehicletype_id),
-    )
-
-
 async def emitir_tramite_vehicular(
     db: AsyncSession,
     payload: TramiteVehicularRequest,
@@ -93,7 +70,7 @@ async def emitir_tramite_vehicular(
         if payload.vehiculo is None:
             raise error(422, "PLACA_REQUERIDA", f"El trámite {payload.tramite.value} requiere la placa del vehículo")
         await validar_catalogos_vehiculo(db, payload.vehiculo.fabricante_id, payload.vehiculo.tipo_vehiculo_id)
-        vehiculo = await _datos_vehiculo(db, payload.vehiculo)
+        vehiculo = await datos_vehiculo_desde_placa(db, payload.vehiculo)
 
     periodo = await obtener_periodo_fiscal(db, ahora.date(), requiere_sbu=False)
     valor = (await valor_vigente_rubro(db, entry.id) * CANTIDAD).quantize(Decimal("0.01"))

@@ -19,7 +19,7 @@ async def consultar_orden(id_orden: str, db: AsyncSession = Depends(get_db)) -> 
     return OrdenResponse(
         id_orden=id_orden,
         titulos=[
-            TituloOrden(rubro=t.entry_id, id_titulo=t.id_titulo, numero_titulo=t.numero_titulo, valor=t.valor)
+            TituloOrden(rubro=t.entry_id, anio=t.anio, id_titulo=t.id_titulo, numero_titulo=t.numero_titulo, valor=t.valor)
             for t in titulos
         ],
     )
