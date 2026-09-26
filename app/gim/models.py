@@ -11,7 +11,7 @@ orden de los INSERT (adjunct -> vehicle -> municipalbond -> item).
 from datetime import date, time
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Boolean, Date, Double, ForeignKey, Integer, MetaData, Numeric, String, Time
+from sqlalchemy import BigInteger, Boolean, Date, Double, ForeignKey, Integer, MetaData, Numeric, String, Text, Time
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -61,6 +61,7 @@ class EntryDefinition(GimBase):
     iscurrent: Mapped[bool | None] = mapped_column(Boolean)
     startdate: Mapped[date | None] = mapped_column(Date)
     entrydefinitiontype: Mapped[str | None] = mapped_column(String(15))
+    rule: Mapped[str | None] = mapped_column(Text)  # regla Drools cuando entrydefinitiontype = RULE
 
 
 class EntryStructure(GimBase):

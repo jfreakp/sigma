@@ -130,11 +130,11 @@ async def test_orden_repetida_en_carrera_deshace_la_emision(db_session, gim_seed
     buscar_real = emision_service.buscar_orden
     llamadas = {"n": 0}
 
-    async def buscar_que_no_ve_la_primera_vez(db, id_orden, entry_id):
+    async def buscar_que_no_ve_la_primera_vez(db, id_orden, entry_id, anio=None):
         llamadas["n"] += 1
         if llamadas["n"] == 1:
             return None
-        return await buscar_real(db, id_orden, entry_id)
+        return await buscar_real(db, id_orden, entry_id, anio)
 
     monkeypatch.setattr(emision_service, "buscar_orden", buscar_que_no_ve_la_primera_vez)
 

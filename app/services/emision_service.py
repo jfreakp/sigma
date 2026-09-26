@@ -16,9 +16,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.errors import AppHTTPException
 from app.gim import repository as repo
-from app.gim.emision import DatosTitulo, DatosVehiculo, LineaTitulo, emitir_titulo
-from app.gim.models import Entry, FiscalPeriod, Resident
+from app.gim.emision import DatosTitulo, DatosVehiculo, LineaTitulo, crear_adjunto_vehiculo, emitir_titulo
+from app.gim.models import Entry, FiscalPeriod, Resident, Vehicle
 from app.models.orden_titulo import OrdenTitulo
+from app.schemas.tramites_vehiculares import VehiculoTramiteIn
 
 ZONA_HORARIA = ZoneInfo("America/Guayaquil")
 
@@ -30,6 +31,18 @@ class ResultadoEmision:
     id_titulo: int
     numero_titulo: int
     valor: Decimal
+    anio: int | None = None
+
+
+@dataclass(frozen=True)
+class TituloAEmitir:
+    anio: int | None  # solo en rubros anuales (rodaje, recargo)
+    lineas: list[LineaTitulo]
+    base: Decimal
+    descripcion: str
+    referencia: str
+    fecha_servicio: date | None = None
+    fecha_vencimiento: date | None = None
 
 
 def ahora_local() -> datetime:
@@ -47,6 +60,7 @@ def _resultado(orden: OrdenTitulo) -> ResultadoEmision:
         id_titulo=orden.id_titulo,
         numero_titulo=orden.numero_titulo,
         valor=orden.valor,
+        anio=orden.anio,
     )
 
 
@@ -54,7 +68,8 @@ def _orden_ya_emitida(orden: OrdenTitulo) -> AppHTTPException:
     return AppHTTPException(
         status_code=409,
         detail=(
-            f"La orden {orden.id_orden} ya tiene título para el rubro {orden.entry_id}: "
+            f"La orden {orden.id_orden} ya tiene título para el rubro {orden.entry_id}"
+            f"{f' y el año {orden.anio}' if orden.anio is not None else ''}: "
             f"título {orden.id_titulo} (número {orden.numero_titulo})"
         ),
         error_code="ORDEN_YA_EMITIDA",
@@ -62,9 +77,13 @@ def _orden_ya_emitida(orden: OrdenTitulo) -> AppHTTPException:
     )
 
 
-async def buscar_orden(db: AsyncSession, id_orden: str, entry_id: int) -> OrdenTitulo | None:
+async def buscar_orden(db: AsyncSession, id_orden: str, entry_id: int, anio: int | None = None) -> OrdenTitulo | None:
     result = await db.execute(
-        select(OrdenTitulo).where(OrdenTitulo.id_orden == id_orden, OrdenTitulo.entry_id == entry_id)
+        select(OrdenTitulo).where(
+            OrdenTitulo.id_orden == id_orden,
+            OrdenTitulo.entry_id == entry_id,
+            OrdenTitulo.anio.is_not_distinct_from(anio),
+        )
     )
     return result.scalar_one_or_none()
 
@@ -77,8 +96,8 @@ async def listar_orden(db: AsyncSession, id_orden: str) -> list[ResultadoEmision
     return [_resultado(orden) for orden in ordenes]
 
 
-async def verificar_orden_libre(db: AsyncSession, id_orden: str, entry_id: int) -> None:
-    existente = await buscar_orden(db, id_orden, entry_id)
+async def verificar_orden_libre(db: AsyncSession, id_orden: str, entry_id: int, anio: int | None = None) -> None:
+    existente = await buscar_orden(db, id_orden, entry_id, anio)
     if existente is not None:
         raise _orden_ya_emitida(existente)
 
@@ -121,15 +140,52 @@ async def valor_vigente_rubro(db: AsyncSession, entry_id: int) -> Decimal:
     return valor
 
 
-async def lineas_de_subrubros(db: AsyncSession, entry: Entry) -> list[LineaTitulo]:
+async def lineas_de_subrubros(
+    db: AsyncSession, entry: Entry, calculados: dict[int, Decimal] | None = None
+) -> list[LineaTitulo]:
     # Sub-rubros que GIM agrega solos al emitir el rubro (p. ej. 444 "COSTO DE PROCESO DE DATOS").
+    # `calculados` trae el valor de los sub-rubros que en GIM se calculan con reglas (p. ej. 713).
+    calculados = calculados or {}
     lineas = []
     for child_id in await repo.get_child_entry_ids(db, entry.id):
+        if child_id in calculados:
+            lineas.append(LineaTitulo(child_id, calculados[child_id]))
+            continue
         valor = await repo.get_current_definition_value(db, child_id)
         if valor is None:
             raise error(500, "RUBRO_MAL_CONFIGURADO", f"El sub-rubro {child_id} del rubro {entry.id} no tiene valor vigente en GIM")
         lineas.append(LineaTitulo(child_id, valor))
     return lineas
+
+
+def validar_anios(anios: list[int], anio_actual: int) -> None:
+    futuros = [anio for anio in anios if anio > anio_actual]
+    if futuros:
+        raise error(422, "ANIO_INVALIDO", f"No se puede emitir para años posteriores a {anio_actual}: {futuros}")
+
+
+def _a_decimal(valor: float | None) -> Decimal | None:
+    return Decimal(str(valor)) if valor is not None else None
+
+
+def _elegir(enviado, anterior):
+    return enviado if enviado is not None else anterior
+
+
+async def datos_vehiculo_desde_placa(db: AsyncSession, vehiculo: VehiculoTramiteIn) -> DatosVehiculo:
+    # Igual que AdjunctHome.findByCode: copia los datos del vehículo más reciente con esa
+    # placa; lo que se envía reemplaza al valor copiado (como editarlo en la pantalla).
+    anterior = await repo.get_latest_vehicle_by_plate(db, vehiculo.placa) or Vehicle()
+    return DatosVehiculo(
+        placa=vehiculo.placa,
+        chasis=_elegir(vehiculo.chasis, anterior.vin),
+        motor=_elegir(vehiculo.motor, anterior.enginenumber),
+        anio=_elegir(vehiculo.anio, anterior.year),
+        cilindraje=_elegir(vehiculo.cilindraje, _a_decimal(anterior.cubiccentimeters)),
+        tonelaje=_elegir(vehiculo.tonelaje, _a_decimal(anterior.weightcapacity)),
+        fabricante_id=_elegir(vehiculo.fabricante_id, anterior.vehiclemaker_id),
+        tipo_vehiculo_id=_elegir(vehiculo.tipo_vehiculo_id, anterior.vehicletype_id),
+    )
 
 
 async def emitir_y_registrar(
@@ -148,53 +204,107 @@ async def emitir_y_registrar(
     request: dict,
     ahora: datetime,
 ) -> ResultadoEmision:
-    # Tras un rollback los objetos ORM quedan expirados: se guarda el id antes.
-    entry_id = entry.id
-    titulo = await emitir_titulo(
+    resultados = await emitir_varios_y_registrar(
         db,
-        DatosTitulo(
-            resident_id=resident.id,
-            identificacion=resident.identificationnumber,
-            direccion=await repo.get_address_street(db, resident.currentaddress_id),
-            entry_id=entry_id,
-            timeperiod_id=entry.timeperiod_id,
-            fiscalperiod_id=periodo.id,
-            emisionperiod=periodo.startdate,
-            status_id=await repo.get_pending_status_id(db),
-            emisor_resident_id=settings.gim_emisor_resident_id,
-            descripcion=descripcion,
-            referencia=referencia,
-            id_orden=id_orden,
-            vehiculo=vehiculo,
-            base=base,
-            lineas=lineas,
-            ahora=ahora,
-        ),
+        id_orden=id_orden,
+        entry=entry,
+        resident=resident,
+        periodo=periodo,
+        titulos=[TituloAEmitir(anio=None, lineas=lineas, base=base, descripcion=descripcion, referencia=referencia)],
+        vehiculo=vehiculo,
+        client_id=client_id,
+        request=request,
+        ahora=ahora,
     )
+    return resultados[0]
 
-    db.add(
-        OrdenTitulo(
-            id_orden=id_orden,
-            id_titulo=titulo.id,
-            numero_titulo=titulo.number,
-            entry_id=entry_id,
-            valor=titulo.total,
-            client_id=client_id,
-            request=request,
+
+async def emitir_varios_y_registrar(
+    db: AsyncSession,
+    *,
+    id_orden: str,
+    entry: Entry,
+    resident: Resident,
+    periodo: FiscalPeriod,
+    titulos: list[TituloAEmitir],
+    vehiculo: DatosVehiculo | None,
+    client_id: int,
+    request: dict,
+    ahora: datetime,
+) -> list[ResultadoEmision]:
+    """Emite uno o varios títulos del mismo rubro (p. ej. un rodaje por año) y los
+    registra en orden_titulo. Todos comparten el mismo vehículo, como en la pantalla.
+    Todo o nada: se confirma en un único commit."""
+    # Tras un rollback los objetos ORM quedan expirados: se guardan los datos antes.
+    entry_id = entry.id
+    direccion = await repo.get_address_street(db, resident.currentaddress_id)
+    status_id = await repo.get_pending_status_id(db)
+    adjunct_id = await crear_adjunto_vehiculo(db, vehiculo, id_orden) if vehiculo is not None else None
+
+    emitidos = []
+    for titulo in titulos:
+        emitido = await emitir_titulo(
+            db,
+            DatosTitulo(
+                resident_id=resident.id,
+                identificacion=resident.identificationnumber,
+                direccion=direccion,
+                entry_id=entry_id,
+                timeperiod_id=entry.timeperiod_id,
+                fiscalperiod_id=periodo.id,
+                emisionperiod=periodo.startdate,
+                status_id=status_id,
+                emisor_resident_id=settings.gim_emisor_resident_id,
+                descripcion=titulo.descripcion,
+                referencia=titulo.referencia,
+                id_orden=id_orden,
+                vehiculo=vehiculo,
+                base=titulo.base,
+                lineas=titulo.lineas,
+                ahora=ahora,
+                fecha_servicio=titulo.fecha_servicio,
+                fecha_vencimiento=titulo.fecha_vencimiento,
+                adjunct_id=adjunct_id,
+            ),
         )
-    )
+        emitidos.append((titulo.anio, emitido))
+
+    # Las filas de orden_titulo se agregan al final: así una orden repetida falla en
+    # este flush (y no dentro de la emisión de otro título).
+    for anio, emitido in emitidos:
+        db.add(
+            OrdenTitulo(
+                id_orden=id_orden,
+                id_titulo=emitido.id,
+                numero_titulo=emitido.number,
+                entry_id=entry_id,
+                anio=anio,
+                valor=emitido.total,
+                client_id=client_id,
+                request=request,
+            )
+        )
     try:
         await db.flush()
     except IntegrityError:
-        # Otra petición con la misma orden y rubro confirmó primero: se deshace todo lo
-        # insertado en GIM y se responde con el título de la otra petición.
+        # Otra petición con la misma orden, rubro y año confirmó primero: se deshace todo
+        # lo insertado en GIM y se responde con el título de la otra petición.
         await db.rollback()
-        existente = await buscar_orden(db, id_orden, entry_id)
-        if existente is None:
-            raise
-        raise _orden_ya_emitida(existente)
+        for anio, _ in emitidos:
+            existente = await buscar_orden(db, id_orden, entry_id, anio)
+            if existente is not None:
+                raise _orden_ya_emitida(existente)
+        raise
 
     await db.commit()
-    return ResultadoEmision(
-        id_orden=id_orden, entry_id=entry_id, id_titulo=titulo.id, numero_titulo=titulo.number, valor=titulo.total
-    )
+    return [
+        ResultadoEmision(
+            id_orden=id_orden,
+            entry_id=entry_id,
+            id_titulo=emitido.id,
+            numero_titulo=emitido.number,
+            valor=emitido.total,
+            anio=anio,
+        )
+        for anio, emitido in emitidos
+    ]

@@ -5,6 +5,7 @@ from app.schemas.comunes import Dinero
 
 class TituloOrden(BaseModel):
     rubro: int
+    anio: int | None  # solo en rubros anuales (rodaje, recargo)
     id_titulo: int
     numero_titulo: int
     valor: Dinero

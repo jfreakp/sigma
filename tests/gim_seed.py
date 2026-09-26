@@ -6,6 +6,7 @@ los endpoints, que usan la fecha real, encuentren el SBU.
 """
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -66,6 +67,17 @@ async def add_resident(session: AsyncSession, resident_id: int, cedula: str, nom
         await session.flush()
 
 
+ENTRY_RODAJE_ID = 3
+ENTRY_EXONERACION_ID = 713
+ENTRY_RECARGO_ID = 685
+TIMEPERIOD_ANUAL_ID = 7
+VALOR_RECARGO = Decimal("25.00")
+# Texto real de las reglas Drools vigentes en diario_20260505 (entrydefinition 3 y 1001).
+FIXTURES = Path(__file__).parent / "fixtures"
+REGLA_RODAJE = (FIXTURES / "regla_rodaje_3.drl").read_text(encoding="utf-8")
+REGLA_EXONERACION = (FIXTURES / "regla_exoneracion_713.drl").read_text(encoding="utf-8")
+
+
 async def add_vehicle(session: AsyncSession, adjunct_id: int, placa: str, **campos) -> None:
     session.add(Adjunct(id=adjunct_id, code=placa))
     await session.flush()
@@ -124,6 +136,28 @@ async def seed_gim(session: AsyncSession) -> None:
             for entry_id, (nombre, _, lleva_vehiculo) in RUBROS_VALOR_FIJO.items()
         ]
     )
+    # Rubros anuales (bloque 2), como en diario_20260505.
+    session.add_all(
+        [
+            Entry(
+                id=ENTRY_RODAJE_ID,
+                code="00003",
+                name="RODAJE VEHÍCULOS",
+                isactive=True,
+                timeperiod_id=TIMEPERIOD_ANUAL_ID,
+                adjunctclassname=ADJUNTO_VEHICULO,
+            ),
+            Entry(id=ENTRY_EXONERACION_ID, code="00713", name="EXONERACIÓN O NO SUJETO PASIVO", isactive=True, timeperiod_id=TIMEPERIOD_ID),
+            Entry(
+                id=ENTRY_RECARGO_ID,
+                code="00685",
+                name="RECARGO POR RETRASO PROCESO COMPLETO DE MATRICULACIÓN VEHICULAR",
+                isactive=True,
+                timeperiod_id=TIMEPERIOD_ID,
+                adjunctclassname=ADJUNTO_VEHICULO,
+            ),
+        ]
+    )
     await session.flush()
     session.add_all(
         [
@@ -131,6 +165,26 @@ async def seed_gim(session: AsyncSession) -> None:
             EntryDefinition(id=444, entry_id=ENTRY_PROCESO_DATOS_ID, value=Decimal("0.04"), iscurrent=False, startdate=date(1980, 1, 1), entrydefinitiontype="VALUE"),
             EntryDefinition(id=850, entry_id=ENTRY_PROCESO_DATOS_ID, value=Decimal("0.10"), iscurrent=True, startdate=date(1980, 1, 1), entrydefinitiontype="VALUE"),
             EntryStructure(id=1108, entrystructuretype="NORMAL", orden=1, child_id=ENTRY_PROCESO_DATOS_ID, parent_id=ENTRY_REVISION_ID),
+        ]
+    )
+    session.add_all(
+        [
+            # 3 y 713 se calculan con reglas Drools en GIM: su definición no tiene valor.
+            EntryDefinition(
+                id=3, entry_id=ENTRY_RODAJE_ID, iscurrent=True, startdate=date(2000, 1, 1), entrydefinitiontype="RULE", rule=REGLA_RODAJE
+            ),
+            EntryDefinition(
+                id=1001,
+                entry_id=ENTRY_EXONERACION_ID,
+                iscurrent=True,
+                startdate=date(2009, 1, 1),
+                entrydefinitiontype="RULE",
+                rule=REGLA_EXONERACION,
+            ),
+            EntryDefinition(id=944, entry_id=ENTRY_RECARGO_ID, value=VALOR_RECARGO, iscurrent=True, startdate=date(2008, 1, 1), entrydefinitiontype="VALUE"),
+            EntryStructure(id=7001, entrystructuretype="NORMAL", orden=1, child_id=ENTRY_EXONERACION_ID, parent_id=ENTRY_RODAJE_ID),
+            EntryStructure(id=7002, entrystructuretype="NORMAL", orden=2, child_id=ENTRY_PROCESO_DATOS_ID, parent_id=ENTRY_RODAJE_ID),
+            EntryStructure(id=7003, entrystructuretype="NORMAL", orden=1, child_id=ENTRY_PROCESO_DATOS_ID, parent_id=ENTRY_RECARGO_ID),
         ]
     )
     for entry_id, (_, valor, _) in RUBROS_VALOR_FIJO.items():

@@ -1,0 +1,137 @@
+package gim.src.rules.ec.gob.gim.pf2011.tax
+
+import ec.gob.gim.revenue.model.Entry;
+import ec.gob.gim.common.model.Person;
+import ec.gob.gim.revenue.model.MunicipalBond;
+import ec.gob.gim.revenue.model.Item;
+import java.util.Date;
+import java.math.BigDecimal;
+
+rule "Impuesto al rodaje de vehiculos"
+        no-loop true
+        salience 5
+        when
+                $itemBase : Item(entry.code == "00003");
+                $mb : MunicipalBond(items contains $itemBase);
+                eval(
+                        ($itemBase.getValue().doubleValue() >= 0 && $itemBase.getValue().doubleValue() <=1000) ||
+                        ($mb.getExempt() || $mb.getIsNoPasiveSubject())
+                        ) 
+        then 
+                $itemBase.setTotal(new BigDecimal(0.0));
+                $mb.setDescription("Pago por servicios administrativos");
+                Date serviceDate = $mb.getServiceDate();
+                $mb.setExpirationDate(new Date(serviceDate.getYear(), 5, 30));
+end
+
+rule "Impuesto al rodaje de vehiculos 1001 - 4000"
+        no-loop true
+        salience 10
+        when
+                $itemBase : Item(entry.code == "00003");
+                $mb : MunicipalBond(items contains $itemBase);
+                eval($itemBase.getValue().doubleValue() >= 1001 && $itemBase.getValue().doubleValue() <=4000) 
+        then 
+                $itemBase.setTotal(new BigDecimal(5.0));
+                $mb.setDescription("Vehículo con valor entre 1001 - 4000");
+            Date serviceDate = $mb.getServiceDate();
+                $mb.setExpirationDate(new Date(serviceDate.getYear(), 5, 30));
+end
+
+rule "Impuesto al rodaje de vehiculos 4001 - 8000"
+        no-loop true
+        salience 15
+        when
+                $itemBase : Item(entry.code == "00003");
+                $mb : MunicipalBond(items contains $itemBase);
+                eval($itemBase.getValue().doubleValue() >= 4001 && $itemBase.getValue().doubleValue() <= 8000) 
+        then 
+                $itemBase.setTotal(new BigDecimal(10.0));
+                $mb.setDescription("Vehículo con valor entre 4001 - 8000");
+            Date serviceDate = $mb.getServiceDate();
+                $mb.setExpirationDate(new Date(serviceDate.getYear(), 5, 30));
+end
+
+rule "Impuesto al rodaje de vehiculos 8001 - 12000"
+        no-loop true
+        salience 20
+        when
+                $itemBase : Item(entry.code == "00003");
+                $mb : MunicipalBond(items contains $itemBase);
+                eval($itemBase.getValue().doubleValue() >= 8001 && $itemBase.getValue().doubleValue() <= 12000) 
+        then 
+                $itemBase.setTotal(new BigDecimal(15.0));
+                $mb.setDescription("Vehículo con valor entre 8001 - 12000");
+            Date serviceDate = $mb.getServiceDate();
+                $mb.setExpirationDate(new Date(serviceDate.getYear(), 5, 30));
+end
+
+rule "Impuesto al rodaje de vehiculos 12001 - 16000"
+        no-loop true
+        salience 25
+        when
+                $itemBase : Item(entry.code == "00003");
+                $mb : MunicipalBond(items contains $itemBase);
+                eval($itemBase.getValue().doubleValue() >= 12001 && $itemBase.getValue().doubleValue() <= 16000) 
+        then 
+                $itemBase.setTotal(new BigDecimal(20.0));
+                $mb.setDescription("Vehículo con valor entre 12001 - 16000");
+            Date serviceDate = $mb.getServiceDate();
+                $mb.setExpirationDate(new Date(serviceDate.getYear(), 5, 30));
+end
+
+rule "Impuesto al rodaje de vehiculos 16001 - 20000"
+        no-loop true
+        salience 30
+        when
+                $itemBase : Item(entry.code == "00003");
+                $mb : MunicipalBond(items contains $itemBase);
+                eval($itemBase.getValue().doubleValue() >= 16001 && $itemBase.getValue().doubleValue() <= 20000) 
+        then 
+                $itemBase.setTotal(new BigDecimal(25.0));
+                $mb.setDescription("Vehículo con valor entre 16001 - 20000");
+            Date serviceDate = $mb.getServiceDate();
+                $mb.setExpirationDate(new Date(serviceDate.getYear(), 5, 30));
+end
+
+rule "Impuesto al rodaje de vehiculos 20001 - 30000"
+        no-loop true
+        salience 35
+        when
+                $itemBase : Item(entry.code == "00003");
+                $mb : MunicipalBond(items contains $itemBase);
+                eval($itemBase.getValue().doubleValue() >= 20001 && $itemBase.getValue().doubleValue() <= 30000) 
+        then 
+                $itemBase.setTotal(new BigDecimal(30.0));
+                $mb.setDescription("Vehículo con valor entre 20001 - 30000");
+            Date serviceDate = $mb.getServiceDate();
+                $mb.setExpirationDate(new Date(serviceDate.getYear(), 5, 30));
+end
+
+rule "Impuesto al rodaje de vehiculos 30001 - 40000"
+        no-loop true
+        salience 40
+        when
+                $itemBase : Item(entry.code == "00003");
+                $mb : MunicipalBond(items contains $itemBase);
+                eval($itemBase.getValue().doubleValue() >= 30001 && $itemBase.getValue().doubleValue() <= 40000) 
+        then 
+                $itemBase.setTotal(new BigDecimal(50.0));
+                $mb.setDescription("Vehículo con valor entre 30001 - 40000");
+            Date serviceDate = $mb.getServiceDate();
+                $mb.setExpirationDate(new Date(serviceDate.getYear(), 5, 30));
+end
+
+rule "Impuesto al rodaje de vehiculos mas de 40001"
+        no-loop true
+        salience 45
+        when
+                $itemBase : Item(entry.code == "00003");
+                $mb : MunicipalBond(items contains $itemBase);
+                eval($itemBase.getValue().doubleValue() >= 40001) 
+        then 
+                $itemBase.setTotal(new BigDecimal(70.0));
+                $mb.setDescription("Vehículo con valor mayor a 40000");
+            Date serviceDate = $mb.getServiceDate();
+                $mb.setExpirationDate(new Date(serviceDate.getYear(), 5, 30));
+end

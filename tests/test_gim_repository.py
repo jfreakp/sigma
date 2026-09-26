@@ -19,6 +19,7 @@ from tests.gim_seed import (
     TIPO_VEHICULO_ID,
     add_resident,
     add_vehicle,
+    REGLA_RODAJE,
 )
 
 
@@ -98,3 +99,9 @@ async def test_get_latest_vehicle_by_plate(db_session, gim_seed):
 
     assert (vehiculo.id, vehiculo.year) == (501, 2008)
     assert await repo.get_latest_vehicle_by_plate(db_session, "NO-EXISTE") is None
+
+
+async def test_get_current_definition_rule(db_session, gim_seed):
+    assert await repo.get_current_definition_rule(db_session, 3) == REGLA_RODAJE
+    # rubros de valor fijo: sin regla
+    assert await repo.get_current_definition_rule(db_session, ENTRY_PROCESO_DATOS_ID) is None
