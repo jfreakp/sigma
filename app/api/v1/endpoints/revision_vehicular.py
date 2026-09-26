@@ -7,7 +7,7 @@ from app.core.db import get_db
 from app.core.security import get_current_client
 from app.models.client import Client
 from app.schemas.revision_vehicular import EmisionRevisionRequest, EmisionRevisionResponse
-from app.services.revision_vehicular_service import emitir_revision_vehicular, obtener_por_orden
+from app.services.revision_vehicular_service import emitir_revision_vehicular
 
 router = APIRouter()
 
@@ -25,12 +25,3 @@ async def emitir(
     resultado = await emitir_revision_vehicular(db, payload, client_id=current_client.id)
     return EmisionRevisionResponse(**asdict(resultado))
 
-
-@router.get(
-    "/revision-vehicular/orden/{id_orden}",
-    response_model=EmisionRevisionResponse,
-    dependencies=[Depends(get_current_client)],
-)
-async def consultar_por_orden(id_orden: str, db: AsyncSession = Depends(get_db)) -> EmisionRevisionResponse:
-    resultado = await obtener_por_orden(db, id_orden)
-    return EmisionRevisionResponse(**asdict(resultado))
