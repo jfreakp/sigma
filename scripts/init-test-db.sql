@@ -1,1 +1,0 @@
-CREATE DATABASE revision_vehicular_test;

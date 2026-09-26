@@ -1,157 +1,83 @@
-from sqlalchemy import select
+from tests.gim_seed import CONTRIBUYENTE_CEDULA, FABRICANTE_ID, TIPO_VEHICULO_ID
 
-from app.models.catalogos import Fabricante, NumeroRevision, ParametroSBU, TarifaRevision, TipoGeneral, TipoVehiculo
-from app.models.contribuyente import Contribuyente
-from app.models.tramite_revision_vehicular import TramiteRevisionVehicular
+URL = "/api/v1/revision-vehicular"
 
 
-def _valid_payload() -> dict:
-    return {
-        "tipo_identificacion": "CEDULA",
-        "numero_identificacion": "1150352548",
+def _body(**cambios) -> dict:
+    body = {
+        "id_orden": "MAT-2026-000123",
+        "numero_identificacion": CONTRIBUYENTE_CEDULA,
         "vehiculo": {
-            "placa": "LBB685B",
-            "chasis": "8LDBSV442E0253221",
-            "motor": "G16B727855",
-            "anio": 2014,
-            "cilindraje": "1590.0",
-            "tonelaje": "0.75",
-            "fabricante_id": 4,
-            "tipo_vehiculo_id": 13,
+            "placa": "LBA-2213",
+            "chasis": "9GAJM52",
+            "motor": "F16D3",
+            "anio": 2015,
+            "cilindraje": 1600,
+            "tonelaje": 1.2,
+            "fabricante_id": FABRICANTE_ID,
+            "tipo_vehiculo_id": TIPO_VEHICULO_ID,
         },
-        "tipo_general": "LIVIANOS",
+        "tipo_general": "TAXIS",
         "numero_revision": "PRIMERA",
-        "fecha_servicio": "2026-08-27",
-        "explicacion": "Revision vehicular 2026",
+        "explicacion": "REVISION VEHICULAR LBA-2213 2026",
     }
+    body.update(cambios)
+    return body
 
 
-async def _seed_catalogos(db_session):
-    db_session.add(Fabricante(id=4, nombre="CHEVROLET"))
-    db_session.add(TipoVehiculo(id=13, nombre="JEEP"))
-    db_session.add(
-        TarifaRevision(tipo_general=TipoGeneral.LIVIANOS, numero_revision=NumeroRevision.PRIMERA, porcentaje="5.00")
-    )
-    db_session.add(ParametroSBU(anio=2026, valor="482.00"))
-    await db_session.flush()
-
-
-async def test_create_tramite_success(client, db_session, auth_headers):
-    await _seed_catalogos(db_session)
-
-    response = await client.post(
-        "/api/v1/revision-vehicular", json=_valid_payload(), headers=auth_headers
-    )
+async def test_post_emite_titulo(client, auth_headers, gim_seed):
+    response = await client.post(URL, json=_body(), headers=auth_headers)
 
     assert response.status_code == 201
     body = response.json()
-    assert body["valor_calculado"] == "24.10"
-    assert body["estado"] == "REGISTRADO"
-    assert body["vehiculo"]["placa"] == "LBB685B"
-    assert body["id"] is not None
+    assert body["id_orden"] == "MAT-2026-000123"
+    assert isinstance(body["id_titulo"], int)
+    assert isinstance(body["numero_titulo"], int)
+    assert body["valor"] == 19.38
+    assert body["exitoso"] is True
 
 
-async def test_create_tramite_requires_auth(client, db_session):
-    await _seed_catalogos(db_session)
-
-    response = await client.post("/api/v1/revision-vehicular", json=_valid_payload())
-
+async def test_post_sin_token(client, gim_seed):
+    response = await client.post(URL, json=_body())
     assert response.status_code == 401
+    assert response.json()["error_code"] == "MISSING_TOKEN"
 
 
-async def test_create_tramite_unknown_fabricante_returns_422(client, db_session, auth_headers):
-    db_session.add(TipoVehiculo(id=13, nombre="JEEP"))
-    db_session.add(
-        TarifaRevision(tipo_general=TipoGeneral.LIVIANOS, numero_revision=NumeroRevision.PRIMERA, porcentaje="5.00")
-    )
-    db_session.add(ParametroSBU(anio=2026, valor="482.00"))
-    await db_session.flush()
+async def test_post_orden_repetida(client, auth_headers, gim_seed):
+    primero = (await client.post(URL, json=_body(), headers=auth_headers)).json()
 
-    response = await client.post(
-        "/api/v1/revision-vehicular", json=_valid_payload(), headers=auth_headers
-    )
+    response = await client.post(URL, json=_body(), headers=auth_headers)
 
+    assert response.status_code == 409
+    body = response.json()
+    assert body["error_code"] == "ORDEN_YA_EMITIDA"
+    assert body["id_titulo"] == primero["id_titulo"]
+    assert body["numero_titulo"] == primero["numero_titulo"]
+    assert "MAT-2026-000123" in body["detail"]
+
+
+async def test_post_contribuyente_no_registrado(client, auth_headers, gim_seed):
+    response = await client.post(URL, json=_body(numero_identificacion="9999999999"), headers=auth_headers)
     assert response.status_code == 422
-    assert response.json()["error_code"] == "FABRICANTE_NOT_FOUND"
+    assert response.json()["error_code"] == "CONTRIBUYENTE_NO_REGISTRADO"
 
 
-async def test_create_tramite_missing_tarifa_returns_422(client, db_session, auth_headers):
-    db_session.add(Fabricante(id=4, nombre="CHEVROLET"))
-    db_session.add(TipoVehiculo(id=13, nombre="JEEP"))
-    db_session.add(ParametroSBU(anio=2026, valor="482.00"))
-    await db_session.flush()
-
-    response = await client.post(
-        "/api/v1/revision-vehicular", json=_valid_payload(), headers=auth_headers
-    )
-
+async def test_post_validacion(client, auth_headers, gim_seed):
+    response = await client.post(URL, json=_body(tipo_general="AVIONES"), headers=auth_headers)
     assert response.status_code == 422
-    assert response.json()["error_code"] == "TARIFA_NOT_FOUND"
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
 
 
-async def test_create_tramite_unknown_tipo_vehiculo_returns_422(client, db_session, auth_headers):
-    db_session.add(Fabricante(id=4, nombre="CHEVROLET"))
-    db_session.add(
-        TarifaRevision(tipo_general=TipoGeneral.LIVIANOS, numero_revision=NumeroRevision.PRIMERA, porcentaje="5.00")
-    )
-    db_session.add(ParametroSBU(anio=2026, valor="482.00"))
-    await db_session.flush()
+async def test_get_por_orden(client, auth_headers, gim_seed):
+    emitido = (await client.post(URL, json=_body(), headers=auth_headers)).json()
 
-    response = await client.post(
-        "/api/v1/revision-vehicular", json=_valid_payload(), headers=auth_headers
-    )
-
-    assert response.status_code == 422
-    assert response.json()["error_code"] == "TIPO_VEHICULO_NOT_FOUND"
-
-
-async def test_create_tramite_dedupes_contribuyente_by_numero_identificacion(client, db_session, auth_headers):
-    await _seed_catalogos(db_session)
-
-    payload_1 = _valid_payload()
-    response_1 = await client.post(
-        "/api/v1/revision-vehicular", json=payload_1, headers=auth_headers
-    )
-    assert response_1.status_code == 201
-
-    payload_2 = _valid_payload()
-    payload_2["vehiculo"]["placa"] = "ZZZ999Z"
-    payload_2["vehiculo"]["chasis"] = "OTHERCHASIS0001"
-    payload_2["vehiculo"]["motor"] = "OTHERMOTOR0001"
-    response_2 = await client.post(
-        "/api/v1/revision-vehicular", json=payload_2, headers=auth_headers
-    )
-    assert response_2.status_code == 201
-
-    result = await db_session.execute(
-        select(Contribuyente).where(
-            Contribuyente.numero_identificacion == payload_1["numero_identificacion"]
-        )
-    )
-    contribuyentes = result.scalars().all()
-    assert len(contribuyentes) == 1
-
-    tramite_1 = await db_session.get(TramiteRevisionVehicular, response_1.json()["id"])
-    tramite_2 = await db_session.get(TramiteRevisionVehicular, response_2.json()["id"])
-    assert tramite_1.contribuyente_id == tramite_2.contribuyente_id == contribuyentes[0].id
-
-
-async def test_get_tramite_by_id(client, db_session, auth_headers):
-    await _seed_catalogos(db_session)
-    create_response = await client.post(
-        "/api/v1/revision-vehicular", json=_valid_payload(), headers=auth_headers
-    )
-    tramite_id = create_response.json()["id"]
-
-    response = await client.get(f"/api/v1/revision-vehicular/{tramite_id}", headers=auth_headers)
+    response = await client.get(f"{URL}/orden/MAT-2026-000123", headers=auth_headers)
 
     assert response.status_code == 200
-    assert response.json()["id"] == tramite_id
-    assert response.json()["valor_calculado"] == "24.10"
+    assert response.json() == emitido
 
 
-async def test_get_tramite_not_found(client, auth_headers):
-    response = await client.get("/api/v1/revision-vehicular/999999", headers=auth_headers)
-
+async def test_get_orden_inexistente(client, auth_headers, gim_seed):
+    response = await client.get(f"{URL}/orden/NO-EXISTE", headers=auth_headers)
     assert response.status_code == 404
-    assert response.json()["error_code"] == "TRAMITE_NOT_FOUND"
+    assert response.json()["error_code"] == "ORDEN_NOT_FOUND"

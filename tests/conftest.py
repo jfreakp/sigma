@@ -1,26 +1,44 @@
+from pathlib import Path
+
+import asyncpg
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import pool, text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy import pool
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.core.config import settings
 from app.core.db import get_db
+from app.core.security import hash_secret
 from app.main import app
 from app.models.base import Base
+from app.models.client import Client
+from app.models.orden_titulo import OrdenTitulo  # noqa: F401  (registra la tabla en Base.metadata)
 
-test_engine = create_async_engine(settings.test_database_url, echo=False, poolclass=pool.NullPool)
-# Used only to hand tests an INDEPENDENT connection/session (its own outer
-# transaction) when they need to prove that application code truly committed
-# data at the database level, outside of the per-test savepoint below.
-TestSessionLocal = async_sessionmaker(test_engine, expire_on_commit=False)
+GIM_SCHEMA_SQL = Path(__file__).parent / "gim_schema.sql"
+
+# Las pruebas no dependen del emisor configurado en .env (que puede ser un
+# resident real, p. ej. el del contribuyente de prueba): usan uno propio.
+settings.gim_emisor_resident_id = 900001
+
+test_engine = create_async_engine(settings.test_gim_database_url, echo=False, poolclass=pool.NullPool)
+
+
+def raw_dsn(url: str) -> str:
+    """URL de SQLAlchemy -> DSN de asyncpg (para ejecutar scripts SQL de varias sentencias)."""
+    return url.replace("postgresql+asyncpg://", "postgresql://", 1)
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def setup_test_db():
+    # gimprod: estructura real de GIM, sin datos (tests/gim_schema.sql).
+    # matriculacion: esquema propio de la API, creado desde los modelos.
+    raw = await asyncpg.connect(raw_dsn(settings.test_gim_database_url))
+    try:
+        await raw.execute(GIM_SCHEMA_SQL.read_text(encoding="utf-8"))
+        await raw.execute("DROP SCHEMA IF EXISTS matriculacion CASCADE; CREATE SCHEMA matriculacion;")
+    finally:
+        await raw.close()
     async with test_engine.begin() as conn:
-        # Drop all tables with CASCADE to handle foreign key constraints
-        await conn.execute(text("DROP SCHEMA public CASCADE"))
-        await conn.execute(text("CREATE SCHEMA public"))
         await conn.run_sync(Base.metadata.create_all)
     yield
     await test_engine.dispose()
@@ -28,16 +46,11 @@ async def setup_test_db():
 
 @pytest_asyncio.fixture
 async def db_session():
-    # Bind the test session to a single connection wrapped in an OUTER,
-    # never-committed transaction. The session itself is put into
-    # "create_savepoint" join mode, so any `await session.commit()` issued
-    # by application code (e.g. create_tramite) only commits/releases a
-    # SAVEPOINT nested inside that outer transaction (SQLAlchemy transparently
-    # opens a new SAVEPOINT after each commit). Because the outer transaction
-    # is rolled back at teardown instead of committed, nothing application
-    # code commits during the test is ever durably persisted to the real
-    # test database - full isolation is preserved even though production
-    # code now calls db.commit() for real.
+    # Sesión atada a una conexión con una transacción EXTERNA que nunca se
+    # confirma. En modo "create_savepoint", cada commit de la aplicación solo
+    # libera un SAVEPOINT dentro de esa transacción, y cada rollback vuelve al
+    # último SAVEPOINT. Al terminar el test se hace rollback de la transacción
+    # externa: nada queda guardado en la base de pruebas.
     async with test_engine.connect() as connection:
         await connection.begin()
         session = AsyncSession(
@@ -62,25 +75,32 @@ async def client(db_session):
     app.dependency_overrides.clear()
 
 
-from app.core.security import hash_secret
-from app.models.client import Client
+@pytest_asyncio.fixture
+async def api_client_row(db_session) -> Client:
+    row = Client(
+        client_id="test-client",
+        client_secret_hash=hash_secret("test-secret"),
+        name="Test Client",
+        is_active=True,
+    )
+    db_session.add(row)
+    await db_session.flush()
+    return row
 
 
 @pytest_asyncio.fixture
-async def auth_headers(client, db_session):
-    db_session.add(
-        Client(
-            client_id="test-client",
-            client_secret_hash=hash_secret("test-secret"),
-            name="Test Client",
-            is_active=True,
-        )
-    )
-    await db_session.flush()
-
+async def auth_headers(client, api_client_row):
     response = await client.post(
         "/api/v1/auth/token",
         json={"client_id": "test-client", "client_secret": "test-secret"},
     )
     token = response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+from tests.gim_seed import seed_gim
+
+
+@pytest_asyncio.fixture
+async def gim_seed(db_session):
+    await seed_gim(db_session)

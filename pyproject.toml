@@ -1,7 +1,7 @@
 [project]
 name = "revision-vehicular-api"
 version = "0.1.0"
-description = "API de registro de trámites de Revisión Vehicular para integración Matriculación-GIM"
+description = "API de emisión de títulos de Revisión Vehicular en GIM para el Sistema de Matriculación"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",

@@ -49,3 +49,25 @@ async def test_unhandled_exception_returns_project_error_shape():
 
     assert response.status_code == 500
     assert response.json() == {"detail": "Internal server error", "error_code": "INTERNAL_ERROR"}
+
+
+async def test_gim_unavailable_returns_503():
+    async def raise_connection_refused():
+        raise ConnectionRefusedError("simulated: GIM database unreachable")
+
+    app.dependency_overrides[get_db] = raise_connection_refused
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.post(
+                "/api/v1/auth/token",
+                json={"client_id": "whoever", "client_secret": "whatever"},
+            )
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "No hay conexión con la base de datos de GIM",
+        "error_code": "GIM_NO_DISPONIBLE",
+    }
