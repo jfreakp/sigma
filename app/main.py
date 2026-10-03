@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="API Matriculación → GIM", lifespan=lifespan)
+app = FastAPI(title="API SIGMA", lifespan=lifespan)
 
 # Fallos al conectar con la base de GIM (red caída, servidor apagado, timeout).
 # OSError incluye ConnectionRefusedError, TimeoutError y errores de DNS.

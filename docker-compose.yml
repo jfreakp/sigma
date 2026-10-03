@@ -1,0 +1,10 @@
+# Despliegue en el servidor: descarga la imagen de Docker Hub (no construye).
+# API_IMAGE va en el .env, por ejemplo: API_IMAGE=<usuario>/matriculacion-gim-api:0.1.0
+services:
+  api:
+    image: ${API_IMAGE:?Definir API_IMAGE en el .env}
+    container_name: matriculacion-gim-api
+    env_file: .env
+    ports:
+      - "${API_PORT:-8080}:8080"   # puerto del servidor : puerto del contenedor
+    restart: unless-stopped

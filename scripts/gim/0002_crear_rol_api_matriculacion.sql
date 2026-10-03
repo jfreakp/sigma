@@ -25,7 +25,9 @@ GRANT SELECT ON
     gimprod.vehiclemaker,
     gimprod.vehicletype,
     gimprod.systemparameter,
-    gimprod.municipalbond
+    gimprod.municipalbond,
+    gimprod.adjunct,   -- datos del último vehículo con la placa (trámites, rodaje, recargo)
+    gimprod.vehicle
 TO api_matriculacion;
 
 -- Emisión: solo INSERT, nunca UPDATE ni DELETE
@@ -43,7 +45,7 @@ GRANT USAGE ON SEQUENCE
     gimprod.item_seq
 TO api_matriculacion;
 
--- Esquema propio de la API (client, orden_titulo, alembic_version)
+-- Esquema propio de la API (client, orden_titulo, tramo_rodaje, regla_gim_replicada, alembic_version)
 CREATE SCHEMA IF NOT EXISTS matriculacion AUTHORIZATION api_matriculacion;
 
 COMMIT;

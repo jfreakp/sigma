@@ -1,4 +1,4 @@
-# API Matriculación → GIM
+# API SIGMA
 
 API (FastAPI) que recibe órdenes del Sistema de Matriculación y **emite los títulos de crédito en GIM**
 igual que la pantalla de emisión de GIM1, en estado PENDIENTE, siempre con el sub-rubro 444 (costo de
@@ -18,6 +18,14 @@ Con esto quedan cubiertos los 10 procesos de Matriculación del levantamiento.
 - Diseño: `docs/superpowers/specs/2026-09-25-emision-titulo-gim-design.md` (revisión vehicular) y
   `docs/superpowers/specs/2026-09-26-tramites-valor-fijo-design.md` (trámites de valor fijo) y
   `docs/superpowers/specs/2026-09-26-rodaje-recargo-design.md` (rodaje y recargo)
+- Documento de arquitectura (Word): [`docs/arquitectura-sigma.docx`](docs/arquitectura-sigma.docx)
+- Diagramas en D2 (`docs/diagramas/`): [componentes](docs/diagramas/arquitectura.svg),
+  [flujo de emisión](docs/diagramas/flujo-emision.svg), [infraestructura](docs/diagramas/infraestructura.svg) y
+  [permisos](docs/diagramas/permisos.svg). Cada `.svg` se genera desde el `.d2` del mismo nombre:
+  `d2 docs/diagramas/<nombre>.d2 docs/diagramas/<nombre>.svg`
+- Componentes y flujo de emisión en otros formatos: Mermaid en [`docs/arquitectura.md`](docs/arquitectura.md)
+  (GitHub lo muestra directo) y draw.io en `docs/diagramas/arquitectura.drawio`. Solo componentes, en FossFLOW:
+  `docs/diagramas/arquitectura-sigma.fossflow.json`
 - Colección de Postman: `postman/matriculacion-gim-api.postman_collection.json`
 
 ## Cómo funciona
@@ -110,6 +118,17 @@ pytest -v
 
 ## Pasar a producción
 
+En producción la API corre en Docker. La imagen se construye en la Mac, se sube a Docker Hub y el servidor
+la descarga; en el servidor no hace falta clonar el repositorio ni instalar Python. El esquema completo está en
+[`docs/diagramas/infraestructura.svg`](docs/diagramas/infraestructura.svg).
+
+| Quién | Qué hace |
+|---|---|
+| Desarrollador | Construye y sube la imagen (paso 1) |
+| DBA | Crea el rol de la API y el emisor de sistema, y habilita la IP del servidor (pasos 2 a 4) |
+| Administrador del servidor | Prepara la carpeta, el `.env` y levanta el contenedor (pasos 5 a 9) |
+| Rentas | Valida la primera orden real en GIM1 y en caja (paso 10) |
+
 ### Antes de empezar
 
 - [ ] Validación en `diario_20260505` terminada: el título emitido por la API se ve bien en GIM1
@@ -117,21 +136,25 @@ pytest -v
 - [ ] Confirmado con el equipo que ningún sistema depende del evento Kafka "EMISIÓN DE OBLIGACIONES"
       (la pantalla de GIM1 lo publica; la API no).
 - [ ] `pytest -v` pasa completo.
-- [ ] Servidor con Python 3.12+ y acceso de red al Postgres de producción de GIM.
+- [ ] Servidor Linux amd64 con Docker y el plugin `docker compose`, con acceso de red al Postgres de
+      producción de GIM (puerto 5432).
+- [ ] Repositorio **privado** en Docker Hub: la imagen lleva el código de la API.
 
-### 1. Instalar en el servidor
+### 1. Construir y subir la imagen (en la Mac)
+
+La Mac es arm64 y el servidor amd64, por eso se construye con `--platform linux/amd64`. Cada versión lleva su
+propio tag; no reutilizar un tag ya publicado.
 
 ```bash
-git clone <repo> sigma && cd sigma
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install .            # sin dependencias de desarrollo
+docker login
+docker buildx build --platform linux/amd64 -t jfreakp/matriculacion-gim-api:0.1.0 --push .
 ```
 
 ### 2. DBA: crear el rol de la API (una vez)
 
-La API **no** debe usar un usuario superusuario (como `rolgimloja`). El DBA crea un rol que solo puede
-leer lo necesario e **insertar** títulos (sin UPDATE ni DELETE), y que es dueño del esquema `matriculacion`:
+La API no debe usar un superusuario (como `rolgimloja`). El DBA crea un rol que solo puede leer lo necesario e
+insertar títulos (sin UPDATE ni DELETE), y que es dueño del esquema `matriculacion`. Los permisos exactos están en
+[`docs/diagramas/permisos.svg`](docs/diagramas/permisos.svg).
 
 ```bash
 psql -h <host> -U <dba> -d <base_gim> -v ON_ERROR_STOP=1 -v clave='<contraseña-fuerte>' \
@@ -145,11 +168,26 @@ psql -h <host> -U <dba> -d <base_gim> -v ON_ERROR_STOP=1 \
      -f scripts/gim/0001_crear_emisor_matriculacion.sql
 ```
 
-Imprime `Creado: resident.id = <id>`: ese número va en `GIM_EMISOR_RESIDENT_ID`. El script se puede
-ejecutar varias veces: si la persona ya existe, solo informa su id. En producción el id será distinto
-al de `diario_20260505` (3008801).
+Imprime `Creado: resident.id = <id>`: ese número va en `GIM_EMISOR_RESIDENT_ID`. El script se puede ejecutar varias
+veces; si la persona ya existe, solo informa su id. En producción el id será distinto al de `diario_20260505`
+(3008801).
 
-### 4. Configurar `.env` de producción
+### 4. DBA: permitir la conexión desde el servidor de la API
+
+El contenedor se conecta a Postgres con la IP del servidor donde corre. Agregar en `pg_hba.conf` una línea para el
+rol `api_matriculacion` desde esa IP y recargar la configuración (`SELECT pg_reload_conf();`).
+
+### 5. Preparar la carpeta en el servidor
+
+En el servidor solo hacen falta dos archivos: `docker-compose.yml` (copiarlo del repositorio) y el `.env`.
+
+```bash
+mkdir -p /opt/matriculacion-gim-api && cd /opt/matriculacion-gim-api
+# copiar aquí docker-compose.yml
+docker login        # con una cuenta que pueda leer el repositorio privado
+```
+
+### 6. Configurar el `.env` de producción
 
 ```
 GIM_DATABASE_URL=postgresql+asyncpg://api_matriculacion:<contraseña-fuerte>@<host>:5432/<base_gim>
@@ -158,57 +196,114 @@ GIM_ENTRY_ID_REVISION=813
 JWT_SECRET=<nuevo: openssl rand -hex 32>
 JWT_ALGORITHM=HS256
 JWT_EXPIRE_MINUTES=60
+API_IMAGE=jfreakp/matriculacion-gim-api:0.1.0
+API_PORT=8080
 ```
-
-- `JWT_SECRET` debe ser **nuevo** (no reutilizar el de desarrollo ni el de `.env.example`).
-- `GIM_EMISOR_RESIDENT_ID` debe ser el emisor de sistema, **no** un funcionario (como mfalvarado).
-- Permisos del archivo: `chmod 600 .env`.
-
-### 5. Crear el esquema de la API
 
 ```bash
-alembic upgrade head
+chmod 600 .env
 ```
 
-Crea `matriculacion.client`, `matriculacion.orden_titulo` (única por orden + rubro + año), `matriculacion.tramo_rodaje` y
-`matriculacion.regla_gim_replicada` (con los tramos y huellas actuales) y `matriculacion.alembic_version`. No toca `gimprod`.
+- `JWT_SECRET` debe ser nuevo: no reutilizar el de desarrollo ni el de `.env.example`.
+- `GIM_EMISOR_RESIDENT_ID` es el emisor de sistema del paso 3, no un funcionario (como mfalvarado).
+- `API_PORT` es el puerto del servidor donde queda la API; dentro del contenedor siempre es 8080.
 
-### 6. Dar de alta el client de ISBURO
+### 7. Descargar la imagen y crear el esquema de la API
+
+Las tablas se crean antes de levantar la API. Si se levanta primero, el arranque deja en el log la advertencia
+"No se pudo revisar las reglas del rodaje de GIM al arrancar", porque todavía no existen.
 
 ```bash
-python scripts/crear_client.py isburo-matriculacion "ISBURO Matriculación"
+docker compose pull
+docker compose run --rm api alembic upgrade head
 ```
 
-Imprime el `client_secret` una sola vez: entregarlo a ISBURO por un canal seguro. Para bloquear un
-client sin borrarlo: `UPDATE matriculacion.client SET is_active = false WHERE client_id = '...';`
+Crea `matriculacion.client`, `matriculacion.orden_titulo` (única por orden + rubro + año),
+`matriculacion.tramo_rodaje`, `matriculacion.regla_gim_replicada` (con los tramos y huellas actuales) y
+`matriculacion.alembic_version`. No toca `gimprod`.
 
-### 7. Levantar la API
+### 8. Dar de alta el client de ISBURO
 
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers 4
+docker compose run --rm api python scripts/crear_client.py isburo-matriculacion "ISBURO Matriculación"
 ```
 
-- Sin `--reload` en producción.
-- Publicarla detrás del proxy del Municipio (nginx/HAProxy) con **HTTPS**; el token viaja en cada petición.
-- Mantenerla corriendo con el mecanismo del servidor (systemd, Docker o Kubernetes, como las demás apps).
+Imprime el `client_secret` una sola vez: entregarlo a ISBURO por un canal seguro. Para bloquear un client sin
+borrarlo: `UPDATE matriculacion.client SET is_active = false WHERE client_id = '...';`
 
-### 8. Verificar
+### 9. Levantar la API
 
-1. `GET /health` → `{"status": "ok"}`.
-2. Pedir token con el client de ISBURO.
-3. Emitir **una** orden real acordada con Rentas y revisarla en GIM1 (y cobrarla en caja).
-4. Revisar que quedó en `matriculacion.orden_titulo`:
+```bash
+docker compose up -d
+docker compose ps          # el estado debe pasar a "healthy" en menos de un minuto
+docker compose logs -f api
+```
+
+El contenedor se reinicia solo si se cae o si el servidor se reinicia (`restart: unless-stopped`). Publicar la API
+detrás del proxy del Municipio (nginx/HAProxy) con HTTPS, apuntando a `http://<servidor>:<API_PORT>`: el token
+viaja en cada petición y no debe ir en texto plano.
+
+### 10. Verificar
+
+1. Salud:
+
+   ```bash
+   curl http://localhost:8080/health          # {"status":"ok"}
+   ```
+
+2. Token con el client de ISBURO:
+
+   ```bash
+   curl -X POST https://<dominio>/api/v1/auth/token \
+        -H 'Content-Type: application/json' \
+        -d '{"client_id":"isburo-matriculacion","client_secret":"<secreto>"}'
+   ```
+
+3. Regla del rodaje al día: `GET /api/v1/diagnostico/reglas-rodaje` debe responder `"estado": "AL_DIA"`.
+4. Emitir una sola orden real acordada con Rentas, revisarla en GIM1 y cobrarla en caja.
+5. Revisar que quedó registrada:
 
    ```sql
    SELECT id_orden, id_titulo, numero_titulo, valor, created_at
    FROM matriculacion.orden_titulo ORDER BY id DESC LIMIT 10;
    ```
 
+### Publicar una versión nueva
+
+1. En la Mac, construir y subir con un tag nuevo (paso 1), por ejemplo `0.1.1`.
+2. En el servidor, cambiar `API_IMAGE` en el `.env` al tag nuevo.
+3. Aplicar migraciones, si la versión trae alguna, y reemplazar el contenedor:
+
+   ```bash
+   docker compose pull
+   docker compose run --rm api alembic upgrade head
+   docker compose up -d
+   ```
+
 ### Volver atrás
 
-- Apagar la API: GIM sigue funcionando igual, los títulos ya emitidos quedan como cualquier otro.
-- Quitar las tablas de la API: `alembic downgrade base` (borra `client` y `orden_titulo`, no toca `gimprod`).
+- A la versión anterior: poner el tag anterior en `API_IMAGE` y ejecutar `docker compose up -d`. Si la versión
+  nueva traía migraciones, revertirlas antes con `docker compose run --rm api alembic downgrade <revisión>`.
+- Apagar la API: `docker compose down`. GIM sigue funcionando igual y los títulos ya emitidos quedan como cualquier
+  otro.
+- Quitar las tablas de la API: `docker compose run --rm api alembic downgrade base` (borra las tablas de
+  `matriculacion`, no toca `gimprod`).
 - Un título emitido por error se anula desde GIM1, como cualquier otro título.
+
+### Sin Docker
+
+Si el servidor no tiene Docker, los pasos 2 a 4, 6 y 10 son los mismos. En lugar de los pasos 1, 5, 7, 8 y 9:
+
+```bash
+git clone <repo> sigma && cd sigma
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install .                       # sin dependencias de desarrollo
+alembic upgrade head
+python scripts/crear_client.py isburo-matriculacion "ISBURO Matriculación"
+uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers 4
+```
+
+Sin `--reload`, y mantenerla corriendo con systemd o el mecanismo que usen las demás apps del servidor.
 
 ---
 

@@ -1,6 +1,6 @@
 {
   "info": {
-    "name": "API Matriculación → GIM",
+    "name": "API SIGMA",
     "description": "Servicios de la API que emite títulos de crédito de Matriculación en GIM.\n\nUso:\n1. Importar esta colección y el entorno (postman/diario_20260505.postman_environment.json).\n2. Seleccionar el entorno.\n3. Ejecutar 'Auth / Obtener token': el token se guarda solo en la variable accessToken.\n4. Ejecutar el resto. Una orden admite un título por trámite; cambiar la variable idOrden para empezar una orden nueva.\n\nLa colección no contiene secretos: clientSecret vive en el entorno.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
